@@ -1,6 +1,7 @@
 package sdd
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -172,6 +173,62 @@ func TestInjectOpenCodeIsIdempotent(t *testing.T) {
 	}
 	if second.Changed {
 		t.Fatalf("Inject() second changed = true")
+	}
+}
+
+func TestInjectOpenCodeMigratesLegacyAgentsKey(t *testing.T) {
+	home := t.TempDir()
+
+	settingsPath := filepath.Join(home, ".config", "opencode", "opencode.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+
+	legacy := `{
+  "agents": {
+    "legacy-agent": {
+      "mode": "all",
+      "prompt": "{file:./AGENTS.md}"
+    }
+  }
+}`
+	if err := os.WriteFile(settingsPath, []byte(legacy), 0o644); err != nil {
+		t.Fatalf("WriteFile(opencode.json) error = %v", err)
+	}
+
+	if _, err := Inject(home, opencodeAdapter()); err != nil {
+		t.Fatalf("Inject() error = %v", err)
+	}
+
+	content, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatalf("ReadFile(opencode.json) error = %v", err)
+	}
+
+	root := map[string]any{}
+	if err := json.Unmarshal(content, &root); err != nil {
+		t.Fatalf("Unmarshal(opencode.json) error = %v", err)
+	}
+
+	if _, hasLegacy := root["agents"]; hasLegacy {
+		t.Fatal("opencode.json should not keep legacy agents key after migration")
+	}
+
+	agentRaw, ok := root["agent"]
+	if !ok {
+		t.Fatal("opencode.json missing agent key after migration")
+	}
+
+	agentMap, ok := agentRaw.(map[string]any)
+	if !ok {
+		t.Fatalf("opencode.json agent key has unexpected type: %T", agentRaw)
+	}
+
+	if _, ok := agentMap["legacy-agent"]; !ok {
+		t.Fatal("legacy agent was not migrated under agent key")
+	}
+	if _, ok := agentMap["sdd-orchestrator"]; !ok {
+		t.Fatal("sdd-orchestrator agent missing after merge")
 	}
 }
 

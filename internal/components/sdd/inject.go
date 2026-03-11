@@ -1,6 +1,7 @@
 package sdd
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -194,12 +195,70 @@ func mergeJSONFile(path string, overlay []byte) (filemerge.WriteResult, error) {
 		baseJSON = nil
 	}
 
+	baseJSON, err = migrateLegacyOpenCodeAgentsKey(baseJSON)
+	if err != nil {
+		return filemerge.WriteResult{}, fmt.Errorf("migrate opencode agents key: %w", err)
+	}
+
 	merged, err := filemerge.MergeJSONObjects(baseJSON, overlay)
 	if err != nil {
 		return filemerge.WriteResult{}, err
 	}
 
 	return filemerge.WriteFileAtomic(path, merged, 0o644)
+}
+
+// migrateLegacyOpenCodeAgentsKey normalizes old OpenCode schema that used
+// "agents" to the current "agent" key. It keeps existing agent entries and
+// merges legacy ones without overriding current definitions.
+func migrateLegacyOpenCodeAgentsKey(baseJSON []byte) ([]byte, error) {
+	if len(strings.TrimSpace(string(baseJSON))) == 0 {
+		return baseJSON, nil
+	}
+
+	root := map[string]any{}
+	if err := json.Unmarshal(baseJSON, &root); err != nil {
+		// Preserve prior behavior for non-JSON/non-parseable inputs.
+		return baseJSON, nil
+	}
+
+	legacyRaw, hasLegacy := root["agents"]
+	if !hasLegacy {
+		return baseJSON, nil
+	}
+
+	legacy, ok := legacyRaw.(map[string]any)
+	if !ok {
+		delete(root, "agents")
+		encoded, err := json.MarshalIndent(root, "", "  ")
+		if err != nil {
+			return nil, err
+		}
+		return append(encoded, '\n'), nil
+	}
+
+	current := map[string]any{}
+	if currentRaw, hasCurrent := root["agent"]; hasCurrent {
+		if parsedCurrent, ok := currentRaw.(map[string]any); ok {
+			current = parsedCurrent
+		}
+	}
+
+	for key, value := range legacy {
+		if _, exists := current[key]; !exists {
+			current[key] = value
+		}
+	}
+
+	root["agent"] = current
+	delete(root, "agents")
+
+	encoded, err := json.MarshalIndent(root, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+
+	return append(encoded, '\n'), nil
 }
 
 // sddOrchestratorMarkers are used to detect if SDD content was already injected
