@@ -364,6 +364,7 @@ func TestInjectGeminiGentlemanWritesSystemPromptWithRealContent(t *testing.T) {
 
 func TestInjectVSCodeGentlemanWritesInstructionsFile(t *testing.T) {
 	home := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 
 	vscodeAdapter, err := agents.NewAdapter("vscode-copilot")
 	if err != nil {

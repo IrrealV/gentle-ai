@@ -83,6 +83,7 @@ func TestInjectClaudeWritesContext7FileAndIsIdempotent(t *testing.T) {
 
 func TestInjectVSCodeWritesContext7ToMCPConfigFile(t *testing.T) {
 	home := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	adapter := vscode.NewAdapter()
 
 	first, err := Inject(home, adapter)

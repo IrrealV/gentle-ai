@@ -171,6 +171,7 @@ func TestInjectGeminiCLIUsesAutoEditMode(t *testing.T) {
 
 func TestInjectVSCodeCopilotUsesAutoApprove(t *testing.T) {
 	home := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 
 	adapter := vscodeAdapter()
 	result, err := Inject(home, adapter)
@@ -205,6 +206,7 @@ func TestInjectVSCodeCopilotUsesAutoApprove(t *testing.T) {
 
 func TestInjectVSCodeCopilotMergesIntoJSONCSettings(t *testing.T) {
 	home := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 
 	adapter := vscodeAdapter()
 	settingsPath := adapter.SettingsPath(home)

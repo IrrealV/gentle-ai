@@ -189,6 +189,7 @@ func TestInjectCursorMergesEngramToSettings(t *testing.T) {
 
 func TestInjectVSCodeMergesEngramToMCPConfigFile(t *testing.T) {
 	home := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	adapter := vscode.NewAdapter()
 
 	result, err := Inject(home, adapter)
