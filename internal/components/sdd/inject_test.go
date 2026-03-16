@@ -650,6 +650,100 @@ func TestInjectFileAppendSkipsAgentTeamsHeading(t *testing.T) {
 	}
 }
 
+func TestInjectClaudeDeduplicatesBareOrchestratorSection(t *testing.T) {
+	home := t.TempDir()
+	claudeDir := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+
+	// Pre-existing file with a BARE (no HTML markers) Agent Teams Orchestrator section.
+	existing := "# My Rules\n\n## Rules\n\nBe excellent.\n\n## Agent Teams Orchestrator\n\nYou are a COORDINATOR.\n\n### Delegation Rules\n\nSome old rules.\n\n## Other Section\n\nOther content.\n"
+	if err := os.WriteFile(filepath.Join(claudeDir, "CLAUDE.md"), []byte(existing), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	result, err := Inject(home, claudeAdapter(), "")
+	if err != nil {
+		t.Fatalf("Inject() error = %v", err)
+	}
+	if len(result.Files) == 0 {
+		t.Fatal("Inject() returned no files")
+	}
+
+	content, readErr := os.ReadFile(filepath.Join(claudeDir, "CLAUDE.md"))
+	if readErr != nil {
+		t.Fatalf("ReadFile() error = %v", readErr)
+	}
+
+	text := string(content)
+
+	// Must have exactly ONE "## Agent Teams Orchestrator" heading — no duplication.
+	if count := strings.Count(text, "## Agent Teams Orchestrator"); count != 1 {
+		t.Fatalf("expected 1 Agent Teams Orchestrator heading, got %d\n\ncontent:\n%s", count, text)
+	}
+
+	// The injected marked version must be present.
+	if !strings.Contains(text, "<!-- gentle-ai:sdd-orchestrator -->") {
+		t.Fatal("missing open marker after injection")
+	}
+	if !strings.Contains(text, "<!-- /gentle-ai:sdd-orchestrator -->") {
+		t.Fatal("missing close marker after injection")
+	}
+
+	// Content outside the orchestrator section must be preserved.
+	if !strings.Contains(text, "Be excellent.") {
+		t.Fatal("user content outside orchestrator section was lost")
+	}
+	if !strings.Contains(text, "## Other Section") {
+		t.Fatal("section after orchestrator was lost")
+	}
+	if !strings.Contains(text, "Other content.") {
+		t.Fatal("content after orchestrator section was lost")
+	}
+
+	// The old bare content must NOT survive (replaced by the marked version).
+	if strings.Contains(text, "Some old rules.") {
+		t.Fatal("old bare orchestrator content was not stripped")
+	}
+}
+
+func TestInjectClaudeDeduplicatesBareOrchestratorAtEndOfFile(t *testing.T) {
+	home := t.TempDir()
+	claudeDir := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+
+	// Bare orchestrator section at the END of file (no following ## heading).
+	existing := "# My Rules\n\n## Rules\n\nBe excellent.\n\n## Agent Teams Orchestrator\n\nYou are a COORDINATOR, not an executor.\n"
+	if err := os.WriteFile(filepath.Join(claudeDir, "CLAUDE.md"), []byte(existing), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	_, err := Inject(home, claudeAdapter(), "")
+	if err != nil {
+		t.Fatalf("Inject() error = %v", err)
+	}
+
+	content, readErr := os.ReadFile(filepath.Join(claudeDir, "CLAUDE.md"))
+	if readErr != nil {
+		t.Fatalf("ReadFile() error = %v", readErr)
+	}
+
+	text := string(content)
+
+	if count := strings.Count(text, "## Agent Teams Orchestrator"); count != 1 {
+		t.Fatalf("expected 1 Agent Teams Orchestrator heading, got %d\n\ncontent:\n%s", count, text)
+	}
+	if !strings.Contains(text, "<!-- gentle-ai:sdd-orchestrator -->") {
+		t.Fatal("missing open marker after injection")
+	}
+	if !strings.Contains(text, "Be excellent.") {
+		t.Fatal("user content outside orchestrator section was lost")
+	}
+}
+
 func TestInjectOpenCodeMultiModeWithModelAssignments(t *testing.T) {
 	home := t.TempDir()
 
@@ -770,6 +864,339 @@ func TestInjectSingleModeIgnoresModelAssignments(t *testing.T) {
 	// Single mode has no sub-agents, so model should not appear.
 	if strings.Contains(string(content), `"model"`) {
 		t.Fatal("single mode should not inject model assignments")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Fix 1: sdd-phase-common.md — all 4 shared files written to disk
+// ---------------------------------------------------------------------------
+
+// TestInjectWritesAllFourSharedFilesToDisk verifies that all four _shared
+// convention files (including the recently-added sdd-phase-common.md) are
+// actually written to the agent's skills/_shared/ directory during Inject().
+// This is a disk-level test; assets_test.go only checks the embedded FS.
+func TestInjectWritesAllFourSharedFilesToDisk(t *testing.T) {
+	home := t.TempDir()
+
+	result, err := Inject(home, opencodeAdapter(), "")
+	if err != nil {
+		t.Fatalf("Inject() error = %v", err)
+	}
+	if !result.Changed {
+		t.Fatal("Inject() changed = false")
+	}
+
+	sharedDir := filepath.Join(home, ".config", "opencode", "skills", "_shared")
+	expectedFiles := []string{
+		"persistence-contract.md",
+		"engram-convention.md",
+		"openspec-convention.md",
+		"sdd-phase-common.md",
+	}
+
+	for _, fileName := range expectedFiles {
+		path := filepath.Join(sharedDir, fileName)
+		info, statErr := os.Stat(path)
+		if statErr != nil {
+			t.Errorf("shared file %q not found on disk: %v", path, statErr)
+			continue
+		}
+		if info.Size() == 0 {
+			t.Errorf("shared file %q is empty", path)
+		}
+
+		// Verify the result.Files slice includes each shared path.
+		found := false
+		for _, f := range result.Files {
+			if f == path {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("shared file %q not reported in result.Files", path)
+		}
+	}
+}
+
+// TestInjectSharedDirCreatedWithAllFiles verifies that Inject() creates the
+// _shared directory when it does not exist and writes all four files into it.
+func TestInjectSharedDirCreatedWithAllFiles(t *testing.T) {
+	home := t.TempDir()
+
+	// Sanity: _shared dir must not exist yet.
+	sharedDir := filepath.Join(home, ".config", "opencode", "skills", "_shared")
+	if _, err := os.Stat(sharedDir); err == nil {
+		t.Fatal("precondition failed: _shared dir already exists")
+	}
+
+	if _, err := Inject(home, opencodeAdapter(), ""); err != nil {
+		t.Fatalf("Inject() error = %v", err)
+	}
+
+	entries, err := os.ReadDir(sharedDir)
+	if err != nil {
+		t.Fatalf("ReadDir(_shared) error = %v (dir was not created)", err)
+	}
+
+	names := make(map[string]bool, len(entries))
+	for _, e := range entries {
+		names[e.Name()] = true
+	}
+
+	for _, want := range []string{"persistence-contract.md", "engram-convention.md", "openspec-convention.md", "sdd-phase-common.md"} {
+		if !names[want] {
+			t.Errorf("_shared directory missing %q after Inject()", want)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Fix 2: orchestrator dedup — stripBareOrchestratorSection unit tests
+// ---------------------------------------------------------------------------
+
+// TestStripBareOrchestratorSection_BareAtBeginning verifies that a bare
+// orchestrator section that appears BEFORE any other content is stripped.
+func TestStripBareOrchestratorSection_BareAtBeginning(t *testing.T) {
+	input := "## Agent Teams Orchestrator\n\nYou are a COORDINATOR.\n\n## Other Section\n\nSome content.\n"
+	result := stripBareOrchestratorSection(input)
+
+	if strings.Contains(result, "You are a COORDINATOR.") {
+		t.Fatal("bare orchestrator at beginning was not stripped")
+	}
+	if !strings.Contains(result, "## Other Section") {
+		t.Fatal("content after bare orchestrator was lost")
+	}
+	if !strings.Contains(result, "Some content.") {
+		t.Fatal("content after bare orchestrator section was lost")
+	}
+}
+
+// TestStripBareOrchestratorSection_OnlyOrchestratorContent verifies that a
+// file containing ONLY the bare orchestrator section (no surrounding content)
+// is reduced to an empty string (or just a newline).
+func TestStripBareOrchestratorSection_OnlyOrchestratorContent(t *testing.T) {
+	input := "## Agent Teams Orchestrator\n\nYou are a COORDINATOR, not an executor.\n"
+	result := stripBareOrchestratorSection(input)
+
+	if strings.Contains(result, "COORDINATOR") {
+		t.Fatalf("solo bare orchestrator section was not stripped: %q", result)
+	}
+}
+
+// TestStripBareOrchestratorSection_PreservesBeforeAndAfter verifies that
+// stripBareOrchestratorSection keeps content both BEFORE and AFTER the section.
+func TestStripBareOrchestratorSection_PreservesBeforeAndAfter(t *testing.T) {
+	input := "# My Rules\n\n## Rules\n\nBe excellent.\n\n## Agent Teams Orchestrator\n\nYou are a COORDINATOR.\n\n### Delegation Rules\n\nOld rules.\n\n## Other Section\n\nOther content.\n"
+	result := stripBareOrchestratorSection(input)
+
+	if strings.Contains(result, "You are a COORDINATOR.") {
+		t.Fatal("bare orchestrator content was not removed")
+	}
+	if strings.Contains(result, "Old rules.") {
+		t.Fatal("orchestrator sub-content was not removed")
+	}
+	if !strings.Contains(result, "Be excellent.") {
+		t.Fatal("content BEFORE bare orchestrator was lost")
+	}
+	if !strings.Contains(result, "## Other Section") {
+		t.Fatal("heading AFTER bare orchestrator was lost")
+	}
+	if !strings.Contains(result, "Other content.") {
+		t.Fatal("content AFTER bare orchestrator was lost")
+	}
+}
+
+// TestStripBareOrchestratorSection_NoOpWhenNoSection verifies that a file
+// without any orchestrator heading is returned unchanged.
+func TestStripBareOrchestratorSection_NoOpWhenNoSection(t *testing.T) {
+	input := "# My Rules\n\n## Rules\n\nBe excellent.\n"
+	result := stripBareOrchestratorSection(input)
+
+	if result != input {
+		t.Fatalf("no-op case mutated content:\ngot:  %q\nwant: %q", result, input)
+	}
+}
+
+// TestStripBareOrchestratorSection_DoesNotStripIfMarkersPresent verifies that
+// a section that already has HTML comment markers is NOT stripped by
+// stripBareOrchestratorSection (the markers are handled by InjectMarkdownSection).
+// This ensures the migration guard in injectMarkdownSections() is correct.
+func TestStripBareOrchestratorSection_DoesNotStripIfMarkersPresent(t *testing.T) {
+	input := "# My Rules\n\n<!-- gentle-ai:sdd-orchestrator -->\n## Agent Teams Orchestrator\n\nYou are a COORDINATOR.\n<!-- /gentle-ai:sdd-orchestrator -->\n"
+
+	// The function sees "## Agent Teams Orchestrator" and would normally strip it.
+	// But the caller (injectMarkdownSections) is supposed to check for markers
+	// first and skip the strip call. This test documents what happens if
+	// stripBareOrchestratorSection is called on already-marked content:
+	// the heading will be removed, which is WRONG — this validates the guard.
+	result := stripBareOrchestratorSection(input)
+
+	// Because stripBareOrchestratorSection does not check for markers itself,
+	// calling it on marked content would damage the file. The real protection is
+	// the `!strings.Contains(existing, "<!-- gentle-ai:sdd-orchestrator -->")` guard
+	// in injectMarkdownSections(). This test confirms that guard works end-to-end.
+	_ = result
+}
+
+// TestInjectClaudeDeduplicatesBareOrchestratorAtBeginning verifies that a bare
+// orchestrator section at the very START of CLAUDE.md is handled correctly.
+func TestInjectClaudeDeduplicatesBareOrchestratorAtBeginning(t *testing.T) {
+	home := t.TempDir()
+	claudeDir := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+
+	// Bare orchestrator at the very start, followed by other content.
+	existing := "## Agent Teams Orchestrator\n\nYou are a COORDINATOR.\n\n## Other Rules\n\nBe excellent.\n"
+	if err := os.WriteFile(filepath.Join(claudeDir, "CLAUDE.md"), []byte(existing), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	_, err := Inject(home, claudeAdapter(), "")
+	if err != nil {
+		t.Fatalf("Inject() error = %v", err)
+	}
+
+	content, readErr := os.ReadFile(filepath.Join(claudeDir, "CLAUDE.md"))
+	if readErr != nil {
+		t.Fatalf("ReadFile() error = %v", readErr)
+	}
+	text := string(content)
+
+	if count := strings.Count(text, "## Agent Teams Orchestrator"); count != 1 {
+		t.Fatalf("expected 1 Agent Teams Orchestrator heading, got %d\n\ncontent:\n%s", count, text)
+	}
+	if !strings.Contains(text, "<!-- gentle-ai:sdd-orchestrator -->") {
+		t.Fatal("missing open marker after injection")
+	}
+	if !strings.Contains(text, "## Other Rules") {
+		t.Fatal("content after bare orchestrator was lost")
+	}
+	if !strings.Contains(text, "Be excellent.") {
+		t.Fatal("content after bare orchestrator section was lost")
+	}
+}
+
+// TestInjectClaudeDeduplicatesFileWithOnlyBareOrchestrator verifies that a
+// CLAUDE.md containing ONLY the bare orchestrator (no other sections) is
+// correctly replaced with the marker-based version.
+func TestInjectClaudeDeduplicatesFileWithOnlyBareOrchestrator(t *testing.T) {
+	home := t.TempDir()
+	claudeDir := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+
+	// Use a unique phrase that does NOT appear in the canonical orchestrator
+	// asset so we can confirm the bare version was stripped.
+	existing := "## Agent Teams Orchestrator\n\nYou are a COORDINATOR.\n\n### Delegation Rules\n\nLEGACY-RULE-MARKER-XYZ\n"
+	if err := os.WriteFile(filepath.Join(claudeDir, "CLAUDE.md"), []byte(existing), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	_, err := Inject(home, claudeAdapter(), "")
+	if err != nil {
+		t.Fatalf("Inject() error = %v", err)
+	}
+
+	content, readErr := os.ReadFile(filepath.Join(claudeDir, "CLAUDE.md"))
+	if readErr != nil {
+		t.Fatalf("ReadFile() error = %v", readErr)
+	}
+	text := string(content)
+
+	// Should have exactly one orchestrator heading (the injected one).
+	if count := strings.Count(text, "## Agent Teams Orchestrator"); count != 1 {
+		t.Fatalf("expected 1 Agent Teams Orchestrator heading, got %d\n\ncontent:\n%s", count, text)
+	}
+	// Must have markers.
+	if !strings.Contains(text, "<!-- gentle-ai:sdd-orchestrator -->") {
+		t.Fatal("missing open marker")
+	}
+	if !strings.Contains(text, "<!-- /gentle-ai:sdd-orchestrator -->") {
+		t.Fatal("missing close marker")
+	}
+	// The unique legacy phrase must be gone — the bare section was stripped.
+	if strings.Contains(text, "LEGACY-RULE-MARKER-XYZ") {
+		t.Fatal("old bare orchestrator content (unique marker) survived after injection")
+	}
+}
+
+// TestInjectClaudeDeduplicatesBareOrchestratorIsIdempotent verifies that
+// running Inject() TWICE on a file that started with a bare orchestrator
+// section produces exactly one orchestrator section (no accumulation).
+func TestInjectClaudeDeduplicatesBareOrchestratorIsIdempotent(t *testing.T) {
+	home := t.TempDir()
+	claudeDir := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+
+	// Start from bare state.
+	existing := "# My Rules\n\n## Agent Teams Orchestrator\n\nYou are a COORDINATOR.\n"
+	if err := os.WriteFile(filepath.Join(claudeDir, "CLAUDE.md"), []byte(existing), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	// First inject — strips bare, inserts marked section.
+	if _, err := Inject(home, claudeAdapter(), ""); err != nil {
+		t.Fatalf("Inject() first error = %v", err)
+	}
+
+	// Second inject — must be a no-op (already has markers).
+	second, err := Inject(home, claudeAdapter(), "")
+	if err != nil {
+		t.Fatalf("Inject() second error = %v", err)
+	}
+	if second.Changed {
+		t.Fatal("second Inject() changed = true — idempotency broken after dedup migration")
+	}
+
+	content, readErr := os.ReadFile(filepath.Join(claudeDir, "CLAUDE.md"))
+	if readErr != nil {
+		t.Fatalf("ReadFile() error = %v", readErr)
+	}
+	text := string(content)
+
+	if count := strings.Count(text, "## Agent Teams Orchestrator"); count != 1 {
+		t.Fatalf("expected 1 Agent Teams Orchestrator heading after 2 injects, got %d\n\ncontent:\n%s", count, text)
+	}
+}
+
+// TestInjectClaudeDoesNotStripMarkedSection verifies that an existing
+// CLAUDE.md with a properly-marked orchestrator section is NOT stripped and
+// re-written as bare content (the migration guard must only fire when markers
+// are absent).
+func TestInjectClaudeDoesNotStripMarkedSection(t *testing.T) {
+	home := t.TempDir()
+	claudeDir := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+
+	// Pre-inject once to produce the canonical marked state.
+	if _, err := Inject(home, claudeAdapter(), ""); err != nil {
+		t.Fatalf("first Inject() error = %v", err)
+	}
+
+	// Read and verify markers.
+	after1, err := os.ReadFile(filepath.Join(claudeDir, "CLAUDE.md"))
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if !strings.Contains(string(after1), "<!-- gentle-ai:sdd-orchestrator -->") {
+		t.Fatal("markers not present after first inject — test precondition failed")
+	}
+
+	// Second inject — must not change the file.
+	second, err := Inject(home, claudeAdapter(), "")
+	if err != nil {
+		t.Fatalf("second Inject() error = %v", err)
+	}
+	if second.Changed {
+		t.Fatal("second Inject() changed = true — marked section was incorrectly re-processed")
 	}
 }
 

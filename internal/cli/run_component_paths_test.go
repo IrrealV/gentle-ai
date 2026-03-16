@@ -50,9 +50,17 @@ func TestComponentPathsSDDIncludesSkillsAndSharedConventions(t *testing.T) {
 
 	paths := componentPaths(home, model.Selection{}, adapters, model.ComponentSDD)
 
-	shared := filepath.Join(home, ".gemini", "skills", "_shared", "persistence-contract.md")
-	if !containsPath(paths, shared) {
-		t.Fatalf("componentPaths(sdd) missing shared convention path %q\npaths=%v", shared, paths)
+	// Verify all four shared convention files are reported.
+	for _, sharedFile := range []string{
+		"persistence-contract.md",
+		"engram-convention.md",
+		"openspec-convention.md",
+		"sdd-phase-common.md",
+	} {
+		shared := filepath.Join(home, ".gemini", "skills", "_shared", sharedFile)
+		if !containsPath(paths, shared) {
+			t.Fatalf("componentPaths(sdd) missing shared convention path %q\npaths=%v", shared, paths)
+		}
 	}
 
 	skill := filepath.Join(home, ".gemini", "skills", "sdd-verify", "SKILL.md")

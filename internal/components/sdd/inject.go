@@ -128,6 +128,7 @@ func Inject(homeDir string, adapter agents.Adapter, sddMode model.SDDModeID, mod
 				"persistence-contract.md",
 				"engram-convention.md",
 				"openspec-convention.md",
+				"sdd-phase-common.md",
 			}
 
 			for _, fileName := range sharedFiles {
@@ -351,6 +352,71 @@ const instructionsFrontmatter = "---\n" +
 	"applyTo: \"**\"\n" +
 	"---\n"
 
+// stripBareOrchestratorSection removes an un-marked "## Agent Teams Orchestrator"
+// (or legacy equivalent) block from content. It finds the first matching heading
+// and removes everything from that line to the next same-level (##) heading or
+// the end of file. This is used to migrate files that contain bare orchestrator
+// content (e.g. copied from docs) before injecting the canonical marker-based version.
+func stripBareOrchestratorSection(content string) string {
+	lines := strings.Split(content, "\n")
+
+	startLine := -1
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		for _, marker := range sddOrchestratorMarkers {
+			if trimmed == marker {
+				startLine = i
+				break
+			}
+		}
+		if startLine >= 0 {
+			break
+		}
+	}
+
+	if startLine < 0 {
+		return content
+	}
+
+	// Find end: next ## heading (same or higher level) after startLine, or EOF.
+	endLine := len(lines)
+	for i := startLine + 1; i < len(lines); i++ {
+		trimmed := strings.TrimSpace(lines[i])
+		if strings.HasPrefix(trimmed, "## ") {
+			endLine = i
+			break
+		}
+	}
+
+	// Rebuild: keep lines before startLine and lines from endLine onward.
+	before := lines[:startLine]
+	after := lines[endLine:]
+
+	// Trim trailing blank lines from the before section to avoid double newlines.
+	for len(before) > 0 && strings.TrimSpace(before[len(before)-1]) == "" {
+		before = before[:len(before)-1]
+	}
+
+	var parts []string
+	if len(before) > 0 {
+		parts = append(parts, strings.Join(before, "\n"))
+	}
+	if len(after) > 0 {
+		afterStr := strings.Join(after, "\n")
+		// Trim leading blank lines from the after section.
+		afterStr = strings.TrimLeft(afterStr, "\n")
+		if afterStr != "" {
+			parts = append(parts, afterStr)
+		}
+	}
+
+	result := strings.Join(parts, "\n\n")
+	if result != "" && !strings.HasSuffix(result, "\n") {
+		result += "\n"
+	}
+	return result
+}
+
 func injectMarkdownSections(homeDir string, adapter agents.Adapter) (InjectionResult, error) {
 	promptPath := adapter.SystemPromptFile(homeDir)
 	content := assets.MustRead("claude/sdd-orchestrator.md")
@@ -358,6 +424,13 @@ func injectMarkdownSections(homeDir string, adapter agents.Adapter) (InjectionRe
 	existing, err := readFileOrEmpty(promptPath)
 	if err != nil {
 		return InjectionResult{}, err
+	}
+
+	// If bare (un-marked) orchestrator content exists but the HTML markers are
+	// not present, strip the bare block first. This migrates legacy files to the
+	// canonical marker-based state without duplicating the section.
+	if hasSDDOrchestrator(existing) && !strings.Contains(existing, "<!-- gentle-ai:sdd-orchestrator -->") {
+		existing = stripBareOrchestratorSection(existing)
 	}
 
 	updated := filemerge.InjectMarkdownSection(existing, "sdd-orchestrator", content)
