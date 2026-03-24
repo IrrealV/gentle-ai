@@ -1476,6 +1476,7 @@ func TestSDDOrchestratorAssetSelection(t *testing.T) {
 	}{
 		{agent: model.AgentGeminiCLI, want: "gemini/sdd-orchestrator.md"},
 		{agent: model.AgentCodex, want: "codex/sdd-orchestrator.md"},
+		{agent: model.AgentAntigravity, want: "antigravity/sdd-orchestrator.md"},
 		{agent: model.AgentClaudeCode, want: "generic/sdd-orchestrator.md"},
 		{agent: model.AgentOpenCode, want: "generic/sdd-orchestrator.md"},
 		{agent: model.AgentCursor, want: "generic/sdd-orchestrator.md"},

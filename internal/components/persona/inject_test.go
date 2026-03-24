@@ -643,6 +643,82 @@ func TestInjectVSCodePreservesNonPersonaGitHubFile(t *testing.T) {
 	}
 }
 
+func TestInjectAntigravityIsIdempotent(t *testing.T) {
+	home := t.TempDir()
+
+	adapter, err := agents.NewAdapter("antigravity")
+	if err != nil {
+		t.Fatalf("NewAdapter(antigravity) error = %v", err)
+	}
+
+	first, err := Inject(home, adapter, model.PersonaGentleman)
+	if err != nil {
+		t.Fatalf("Inject() first error = %v", err)
+	}
+	if !first.Changed {
+		t.Fatal("Inject() first changed = false")
+	}
+
+	promptPath := adapter.SystemPromptFile(home)
+	contentAfterFirst, err := os.ReadFile(promptPath)
+	if err != nil {
+		t.Fatalf("ReadFile() after first inject error = %v", err)
+	}
+
+	second, err := Inject(home, adapter, model.PersonaGentleman)
+	if err != nil {
+		t.Fatalf("Inject() second error = %v", err)
+	}
+	if second.Changed {
+		t.Fatal("Inject() second changed = true — persona was duplicated in rules.md")
+	}
+
+	contentAfterSecond, err := os.ReadFile(promptPath)
+	if err != nil {
+		t.Fatalf("ReadFile() after second inject error = %v", err)
+	}
+
+	if string(contentAfterFirst) != string(contentAfterSecond) {
+		t.Fatal("rules.md content changed on second inject — persona was duplicated")
+	}
+}
+
+func TestInjectAntigravityPreservesExistingContent(t *testing.T) {
+	home := t.TempDir()
+
+	adapter, err := agents.NewAdapter("antigravity")
+	if err != nil {
+		t.Fatalf("NewAdapter(antigravity) error = %v", err)
+	}
+
+	promptPath := adapter.SystemPromptFile(home)
+	if err := os.MkdirAll(filepath.Dir(promptPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll error = %v", err)
+	}
+
+	const userContent = "# My custom rules\n\nDo not refactor unless asked.\n"
+	if err := os.WriteFile(promptPath, []byte(userContent), 0o644); err != nil {
+		t.Fatalf("WriteFile error = %v", err)
+	}
+
+	result, err := Inject(home, adapter, model.PersonaGentleman)
+	if err != nil {
+		t.Fatalf("Inject() error = %v", err)
+	}
+	if !result.Changed {
+		t.Fatal("Inject() changed = false on first run over non-empty file")
+	}
+
+	content, err := os.ReadFile(promptPath)
+	if err != nil {
+		t.Fatalf("ReadFile() after inject error = %v", err)
+	}
+
+	if !strings.Contains(string(content), userContent) {
+		t.Fatal("rules.md lost pre-existing user content after inject")
+	}
+}
+
 func TestInjectVSCodeIdempotentAfterHeal(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
