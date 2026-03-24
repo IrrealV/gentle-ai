@@ -300,6 +300,46 @@ func TestInjectOpenCodeIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestInjectWindsurfIsIdempotent(t *testing.T) {
+	home := t.TempDir()
+
+	windsurfAdapter, err := agents.NewAdapter("windsurf")
+	if err != nil {
+		t.Fatalf("NewAdapter(windsurf) error = %v", err)
+	}
+
+	first, err := Inject(home, windsurfAdapter, model.PersonaGentleman)
+	if err != nil {
+		t.Fatalf("Inject() first error = %v", err)
+	}
+	if !first.Changed {
+		t.Fatalf("Inject() first changed = false")
+	}
+
+	promptPath := windsurfAdapter.SystemPromptFile(home)
+	contentAfterFirst, err := os.ReadFile(promptPath)
+	if err != nil {
+		t.Fatalf("ReadFile() after first inject error = %v", err)
+	}
+
+	second, err := Inject(home, windsurfAdapter, model.PersonaGentleman)
+	if err != nil {
+		t.Fatalf("Inject() second error = %v", err)
+	}
+	if second.Changed {
+		t.Fatalf("Inject() second changed = true — persona was duplicated in global_rules.md")
+	}
+
+	contentAfterSecond, err := os.ReadFile(promptPath)
+	if err != nil {
+		t.Fatalf("ReadFile() after second inject error = %v", err)
+	}
+
+	if string(contentAfterFirst) != string(contentAfterSecond) {
+		t.Fatal("global_rules.md content changed on second inject — persona was duplicated")
+	}
+}
+
 func TestInjectCursorGentlemanWritesRulesFileWithRealContent(t *testing.T) {
 	home := t.TempDir()
 

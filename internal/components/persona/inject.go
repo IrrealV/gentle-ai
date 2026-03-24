@@ -110,6 +110,11 @@ func Inject(homeDir string, adapter agents.Adapter, persona model.PersonaID) (In
 			return InjectionResult{}, err
 		}
 
+		// Idempotency: skip if persona content is already present in the file.
+		if strings.Contains(existing, strings.TrimSpace(content)) {
+			return InjectionResult{Files: []string{promptPath}}, nil
+		}
+
 		// Do a real append: preserve existing content + add new content
 		updated := existing
 		if len(updated) > 0 && !strings.HasSuffix(updated, "\n") {
