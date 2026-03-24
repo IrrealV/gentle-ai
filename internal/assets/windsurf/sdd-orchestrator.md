@@ -1,6 +1,6 @@
 # Agent Teams Lite — Orchestrator Rule for Cascade (Windsurf)
 
-Add this as a global rule in your agent's global config (e.g. `~/.codeium/windsurf/cascade_rules.md`) or as a workspace rule in `.agent/rules/sdd-orchestrator.md`.
+Add this as a global rule in your agent's global config (e.g. `~/.codeium/windsurf/memories/global_rules.md`) or as a workspace rule in `.agent/rules/sdd-orchestrator.md`.
 
 ## Spec-Driven Development (SDD) via Cascade
 

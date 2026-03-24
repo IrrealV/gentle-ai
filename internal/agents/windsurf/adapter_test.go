@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/gentleman-programming/gentle-ai/internal/model"
@@ -147,5 +148,81 @@ func TestAgentIdentity(t *testing.T) {
 
 	if got := a.Tier(); got != model.TierFull {
 		t.Fatalf("Tier() = %v, want %v", got, model.TierFull)
+	}
+}
+
+func TestSettingsPathMultiplatform(t *testing.T) {
+	home := testHome
+	a := NewAdapter()
+
+	tests := []struct {
+		name    string
+		goos    string
+		envVars map[string]string
+		want    string
+	}{
+		{
+			name: "Linux with custom XDG_CONFIG_HOME",
+			goos: "linux",
+			envVars: map[string]string{
+				"XDG_CONFIG_HOME": "/custom/config",
+			},
+			want: "/custom/config/Windsurf/User/settings.json",
+		},
+		{
+			name:    "Linux with default XDG_CONFIG_HOME",
+			goos:    "linux",
+			envVars: map[string]string{},
+			want:    filepath.Join(home, ".config", "Windsurf", "User", "settings.json"),
+		},
+		{
+			name: "Windows with custom APPDATA",
+			goos: "windows",
+			envVars: map[string]string{
+				"APPDATA": "C:\\CustomAppData",
+			},
+			want: "C:\\CustomAppData\\Windsurf\\User\\settings.json",
+		},
+		{
+			name:    "Windows with default APPDATA",
+			goos:    "windows",
+			envVars: map[string]string{},
+			want:    filepath.Join(home, "AppData", "Roaming", "Windsurf", "User", "settings.json"),
+		},
+		{
+			name:    "macOS ignores environment variables",
+			goos:    "darwin",
+			envVars: map[string]string{},
+			want:    filepath.Join(home, "Library", "Application Support", "Windsurf", "User", "settings.json"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Skip tests for other platforms to avoid runtime.GOOS mismatch
+			if runtime.GOOS != tt.goos {
+				t.Skipf("Skipping %s test on %s", tt.goos, runtime.GOOS)
+			}
+
+			// Set environment variables with proper isolation using t.Setenv
+			for key, value := range tt.envVars {
+				if value != "" {
+					t.Setenv(key, value)
+				}
+			}
+
+			// Ensure clean environment for variables not in the test case
+			if _, exists := tt.envVars["XDG_CONFIG_HOME"]; !exists && runtime.GOOS == "linux" {
+				t.Setenv("XDG_CONFIG_HOME", "")
+			}
+			if _, exists := tt.envVars["APPDATA"]; !exists && runtime.GOOS == "windows" {
+				t.Setenv("APPDATA", "")
+			}
+
+			got := a.SettingsPath(home)
+			if got != tt.want {
+				t.Fatalf("SettingsPath() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }

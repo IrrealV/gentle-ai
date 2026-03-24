@@ -103,7 +103,24 @@ func Inject(homeDir string, adapter agents.Adapter, persona model.PersonaID) (In
 
 	case model.StrategyAppendToFile:
 		promptPath := adapter.SystemPromptFile(homeDir)
-		writeResult, err := filemerge.WriteFileAtomic(promptPath, []byte(content), 0o644)
+
+		// Read existing content if file exists
+		existing, err := readFileOrEmpty(promptPath)
+		if err != nil {
+			return InjectionResult{}, err
+		}
+
+		// Do a real append: preserve existing content + add new content
+		updated := existing
+		if len(updated) > 0 && !strings.HasSuffix(updated, "\n") {
+			updated += "\n"
+		}
+		if len(updated) > 0 {
+			updated += "\n"
+		}
+		updated += content
+
+		writeResult, err := filemerge.WriteFileAtomic(promptPath, []byte(updated), 0o644)
 		if err != nil {
 			return InjectionResult{}, err
 		}

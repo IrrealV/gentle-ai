@@ -450,6 +450,8 @@ func sddOrchestratorAsset(agent model.AgentID) string {
 		return "gemini/sdd-orchestrator.md"
 	case model.AgentCodex:
 		return "codex/sdd-orchestrator.md"
+	case model.AgentWindsurf:
+		return "windsurf/sdd-orchestrator.md"
 	default:
 		return "generic/sdd-orchestrator.md"
 	}
