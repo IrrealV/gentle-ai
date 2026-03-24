@@ -26,8 +26,8 @@ func TestScanConfigs_ReturnsAllKnownAgentsWithExistsFlag(t *testing.T) {
 
 	// Must return at least as many entries as the registry has adapters with
 	// a non-empty GlobalConfigDir. Currently: claude, opencode, gemini, cursor,
-	// vscode-copilot, codex = 6. Old implementation only returned 4.
-	if len(configs) < 4 {
+	// vscode-copilot, codex, antigravity = 7. Old implementation only returned 4.
+	if len(configs) < 7 {
 		t.Fatalf("ScanConfigs() returned %d entries, want >= 4; got %v", len(configs), configs)
 	}
 
@@ -76,6 +76,7 @@ func TestScanConfigs_AgentFieldMatchesModelAgentID(t *testing.T) {
 		"cursor":         false,
 		"vscode-copilot": false,
 		"codex":          false,
+		"antigravity":    false,
 	}
 
 	for _, c := range configs {

@@ -1,18 +1,11 @@
 {
   "mcpServers": {
     "engram": {
-      "command": "engram",
       "args": [
         "mcp",
         "--tools=agent"
-      ]
-    },
-    "context7": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@context7/mcp-server"
-      ]
+      ],
+      "command": "engram"
     }
   }
 }

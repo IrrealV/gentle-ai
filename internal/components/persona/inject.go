@@ -103,7 +103,27 @@ func Inject(homeDir string, adapter agents.Adapter, persona model.PersonaID) (In
 
 	case model.StrategyAppendToFile:
 		promptPath := adapter.SystemPromptFile(homeDir)
-		writeResult, err := filemerge.WriteFileAtomic(promptPath, []byte(content), 0o644)
+
+		existing, err := readFileOrEmpty(promptPath)
+		if err != nil {
+			return InjectionResult{}, err
+		}
+
+		// Idempotency: skip if persona content is already present in the file.
+		if strings.Contains(existing, strings.TrimSpace(content)) {
+			return InjectionResult{Files: []string{promptPath}}, nil
+		}
+
+		updated := existing
+		if len(updated) > 0 && !strings.HasSuffix(updated, "\n") {
+			updated += "\n"
+		}
+		if len(updated) > 0 {
+			updated += "\n"
+		}
+		updated += content
+
+		writeResult, err := filemerge.WriteFileAtomic(promptPath, []byte(updated), 0o644)
 		if err != nil {
 			return InjectionResult{}, err
 		}

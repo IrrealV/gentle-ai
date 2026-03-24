@@ -128,39 +128,27 @@ func (a *Adapter) MCPConfigPath(homeDir string, _ string) string {
 
 // --- Optional capabilities ---
 
-func (a *Adapter) SupportsOutputStyles() bool  { return false }
+func (a *Adapter) SupportsOutputStyles() bool     { return false }
 func (a *Adapter) OutputStyleDir(_ string) string { return "" }
-func (a *Adapter) SupportsSlashCommands() bool { return false }
-func (a *Adapter) CommandsDir(_ string) string  { return "" }
-func (a *Adapter) SupportsSkills() bool         { return true }
-func (a *Adapter) SupportsSystemPrompt() bool   { return true }
-func (a *Adapter) SupportsMCP() bool            { return true }
+func (a *Adapter) SupportsSlashCommands() bool    { return false }
+func (a *Adapter) CommandsDir(_ string) string    { return "" }
+func (a *Adapter) SupportsSkills() bool           { return true }
+func (a *Adapter) SupportsSystemPrompt() bool     { return true }
+func (a *Adapter) SupportsMCP() bool              { return true }
 
 // --- Helpers ---
 
 // platformConfigBase returns the OS-native "config home" directory derived
-// from homeDir. By using homeDir as the root, this function remains hermetic:
-// tests that pass an isolated temp dir receive a path inside that temp dir,
-// never leaking real system paths.
-//
-// On Linux/Darwin the XDG/macOS standard paths are respected via env overrides,
-// but ONLY when they don't change the hermetic homeDir-rooted contract expected
-// by the test suite (env vars are rarely set in CI).
+// from homeDir. homeDir is always used as the root, so this function is
+// hermetic: tests that pass an isolated temp dir receive a path inside that
+// temp dir and never leak real system paths.
 func platformConfigBase(homeDir string) string {
 	switch runtime.GOOS {
 	case "windows":
-		// Prefer native %AppData% when set — that IS the user's roaming profile.
-		if appData := os.Getenv("AppData"); appData != "" {
-			return appData
-		}
 		return filepath.Join(homeDir, "AppData", "Roaming")
 	case "darwin":
 		return filepath.Join(homeDir, "Library", "Application Support")
 	default:
-		// Linux — honour XDG_CONFIG_HOME when explicitly set.
-		if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-			return xdg
-		}
 		return filepath.Join(homeDir, ".config")
 	}
 }

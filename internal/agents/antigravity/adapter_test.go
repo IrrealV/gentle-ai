@@ -149,13 +149,10 @@ func TestConfigPathsUseTempDir(t *testing.T) {
 	if !filepath.IsAbs(got) {
 		t.Fatalf("GlobalConfigDir() = %q, want absolute path", got)
 	}
-	// Path must be rooted inside a directory that contains home as a prefix,
-	// OR inside a known env-var config dir (e.g. $AppData on Windows).
-	// On Linux/macOS without XDG_CONFIG_HOME set, it must be under home.
-	if os.Getenv("XDG_CONFIG_HOME") == "" && os.Getenv("AppData") == "" {
-		if !isUnder(got, home) {
-			t.Fatalf("GlobalConfigDir() = %q, want path under homeDir %q", got, home)
-		}
+	// Path must always be rooted inside homeDir — platformConfigBase never
+	// reads env vars, so this holds unconditionally.
+	if !isUnder(got, home) {
+		t.Fatalf("GlobalConfigDir() = %q, want path under homeDir %q", got, home)
 	}
 }
 

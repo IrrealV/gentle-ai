@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/gentleman-programming/gentle-ai/internal/agents"
+	"github.com/gentleman-programming/gentle-ai/internal/agents/antigravity"
 	"github.com/gentleman-programming/gentle-ai/internal/agents/claude"
 	codexagent "github.com/gentleman-programming/gentle-ai/internal/agents/codex"
 	"github.com/gentleman-programming/gentle-ai/internal/agents/cursor"
@@ -26,12 +27,13 @@ import (
 
 var update = flag.Bool("update", false, "update golden files")
 
-func claudeAdapter() agents.Adapter   { return claude.NewAdapter() }
-func opencodeAdapter() agents.Adapter { return opencode.NewAdapter() }
-func cursorAdapter() agents.Adapter   { return cursor.NewAdapter() }
-func geminiAdapter() agents.Adapter   { return gemini.NewAdapter() }
-func vscodeAdapter() agents.Adapter   { return vscode.NewAdapter() }
-func codexAdapter() agents.Adapter    { return codexagent.NewAdapter() }
+func claudeAdapter() agents.Adapter      { return claude.NewAdapter() }
+func opencodeAdapter() agents.Adapter    { return opencode.NewAdapter() }
+func cursorAdapter() agents.Adapter      { return cursor.NewAdapter() }
+func geminiAdapter() agents.Adapter      { return gemini.NewAdapter() }
+func vscodeAdapter() agents.Adapter      { return vscode.NewAdapter() }
+func codexAdapter() agents.Adapter       { return codexagent.NewAdapter() }
+func antigravityAdapter() agents.Adapter { return antigravity.NewAdapter() }
 
 // ---------------------------------------------------------------------------
 // Existing golden tests (context7, presets, SDD command)
@@ -293,6 +295,36 @@ func TestGoldenSDD_Codex(t *testing.T) {
 	}
 }
 
+func TestGoldenSDD_Antigravity(t *testing.T) {
+	home := t.TempDir()
+
+	adapter := antigravityAdapter()
+	result, err := sdd.Inject(home, adapter, "")
+	if err != nil {
+		t.Fatalf("sdd.Inject(antigravity) error = %v", err)
+	}
+	if !result.Changed {
+		t.Fatalf("sdd.Inject(antigravity) changed = false")
+	}
+
+	// Antigravity uses StrategyAppendToFile — SDD writes to rules.md.
+	rulesFile := readTestFile(t, adapter.SystemPromptFile(home))
+	assertGolden(t, "sdd-antigravity-rules.golden", rulesFile)
+
+	// Verify ALL expected SDD skill files exist.
+	expectedSkills := []string{
+		"sdd-init", "sdd-apply", "sdd-archive", "sdd-explore",
+		"sdd-propose", "sdd-spec", "sdd-design", "sdd-tasks", "sdd-verify",
+	}
+	agSkillsDir := adapter.SkillsDir(home)
+	for _, name := range expectedSkills {
+		path := filepath.Join(agSkillsDir, name, "SKILL.md")
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("expected SDD skill file %q not found: %v", name, err)
+		}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Persona Injector golden tests
 // ---------------------------------------------------------------------------
@@ -432,6 +464,23 @@ func TestGoldenEngram_OpenCode(t *testing.T) {
 
 	configJSON := readTestFile(t, filepath.Join(home, ".config", "opencode", "opencode.json"))
 	assertGolden(t, "engram-opencode-settings.golden", configJSON)
+}
+
+func TestGoldenEngram_Antigravity(t *testing.T) {
+	home := t.TempDir()
+
+	adapter := antigravityAdapter()
+	result, err := engram.Inject(home, adapter)
+	if err != nil {
+		t.Fatalf("engram.Inject(antigravity) error = %v", err)
+	}
+	if !result.Changed {
+		t.Fatalf("engram.Inject(antigravity) changed = false")
+	}
+
+	mcpPath := adapter.MCPConfigPath(home, "engram")
+	mcpJSON := readTestFile(t, mcpPath)
+	assertGolden(t, "engram-antigravity-mcp.golden", mcpJSON)
 }
 
 // ---------------------------------------------------------------------------
