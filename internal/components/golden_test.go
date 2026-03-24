@@ -15,6 +15,7 @@ import (
 	"github.com/gentleman-programming/gentle-ai/internal/agents/gemini"
 	"github.com/gentleman-programming/gentle-ai/internal/agents/opencode"
 	"github.com/gentleman-programming/gentle-ai/internal/agents/vscode"
+	"github.com/gentleman-programming/gentle-ai/internal/agents/windsurf"
 	"github.com/gentleman-programming/gentle-ai/internal/assets"
 	"github.com/gentleman-programming/gentle-ai/internal/components/engram"
 	"github.com/gentleman-programming/gentle-ai/internal/components/mcp"
@@ -32,6 +33,7 @@ func cursorAdapter() agents.Adapter   { return cursor.NewAdapter() }
 func geminiAdapter() agents.Adapter   { return gemini.NewAdapter() }
 func vscodeAdapter() agents.Adapter   { return vscode.NewAdapter() }
 func codexAdapter() agents.Adapter    { return codexagent.NewAdapter() }
+func windsurfAdapter() agents.Adapter { return windsurf.NewAdapter() }
 
 // ---------------------------------------------------------------------------
 // Existing golden tests (context7, presets, SDD command)
@@ -293,6 +295,36 @@ func TestGoldenSDD_Codex(t *testing.T) {
 	}
 }
 
+func TestGoldenSDD_Windsurf(t *testing.T) {
+	home := t.TempDir()
+
+	result, err := sdd.Inject(home, windsurfAdapter(), "")
+	if err != nil {
+		t.Fatalf("sdd.Inject(windsurf) error = %v", err)
+	}
+	if !result.Changed {
+		t.Fatalf("sdd.Inject(windsurf) changed = false")
+	}
+
+	rulesMD := readTestFile(t, filepath.Join(home, ".codeium", "windsurf", "memories", "global_rules.md"))
+	assertGolden(t, "sdd-windsurf-global-rules.golden", rulesMD)
+
+	skillInit := readTestFile(t, filepath.Join(home, ".codeium", "windsurf", "skills", "sdd-init", "SKILL.md"))
+	assertGolden(t, "sdd-windsurf-skill-sdd-init.golden", skillInit)
+
+	expectedSkills := []string{
+		"sdd-init", "sdd-apply", "sdd-archive", "sdd-explore",
+		"sdd-propose", "sdd-spec", "sdd-design", "sdd-tasks", "sdd-verify",
+	}
+	skillsDir := filepath.Join(home, ".codeium", "windsurf", "skills")
+	for _, name := range expectedSkills {
+		path := filepath.Join(skillsDir, name, "SKILL.md")
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("expected SDD skill file %q not found: %v", name, err)
+		}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Persona Injector golden tests
 // ---------------------------------------------------------------------------
@@ -432,6 +464,21 @@ func TestGoldenEngram_OpenCode(t *testing.T) {
 
 	configJSON := readTestFile(t, filepath.Join(home, ".config", "opencode", "opencode.json"))
 	assertGolden(t, "engram-opencode-settings.golden", configJSON)
+}
+
+func TestGoldenEngram_Windsurf(t *testing.T) {
+	home := t.TempDir()
+
+	result, err := engram.Inject(home, windsurfAdapter())
+	if err != nil {
+		t.Fatalf("engram.Inject(windsurf) error = %v", err)
+	}
+	if !result.Changed {
+		t.Fatalf("engram.Inject(windsurf) changed = false")
+	}
+
+	mcpJSON := readTestFile(t, filepath.Join(home, ".codeium", "windsurf", "mcp_config.json"))
+	assertGolden(t, "engram-windsurf-mcp.golden", mcpJSON)
 }
 
 // ---------------------------------------------------------------------------
