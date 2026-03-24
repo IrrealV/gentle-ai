@@ -3,6 +3,7 @@ package system
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 // ConfigState records the filesystem presence of an agent's global config directory.
@@ -31,6 +32,7 @@ func knownAgentConfigDirs(homeDir string) []ConfigState {
 		{Agent: "cursor", Path: filepath.Join(homeDir, ".cursor")},
 		{Agent: "vscode-copilot", Path: vscodeCopilotGlobalConfigDir(homeDir)},
 		{Agent: "codex", Path: filepath.Join(homeDir, ".codex")},
+		{Agent: "antigravity", Path: antigravityGlobalConfigDir(homeDir)},
 	}
 }
 
@@ -39,6 +41,39 @@ func knownAgentConfigDirs(homeDir string) []ConfigState {
 // SystemPromptDir and SettingsPath are OS-dependent, but GlobalConfigDir is not.
 func vscodeCopilotGlobalConfigDir(homeDir string) string {
 	return filepath.Join(homeDir, ".copilot")
+}
+
+// antigravityGlobalConfigDir returns the OS-native path for Antigravity's
+// config root. It mirrors the configDir() logic from the antigravity adapter
+// without importing it (import-cycle shim).
+//
+// IMPORTANT: like all other helpers in this shim, homeDir is used as the base
+// so tests that pass an isolated temp directory remain hermetic.
+// os.UserConfigDir() is intentionally NOT used here because it always resolves
+// to the real system path, which breaks tests when ~/.config/antigravity exists.
+//
+//   - Windows: %AppData%\antigravity  (fallback: homeDir\AppData\Roaming)
+//   - macOS:   homeDir/Library/Application Support/antigravity
+//   - Linux:   $XDG_CONFIG_HOME/antigravity  or  homeDir/.config/antigravity
+func antigravityGlobalConfigDir(homeDir string) string {
+	var base string
+	switch runtime.GOOS {
+	case "windows":
+		if appData := os.Getenv("AppData"); appData != "" {
+			base = appData
+		} else {
+			base = filepath.Join(homeDir, "AppData", "Roaming")
+		}
+	case "darwin":
+		base = filepath.Join(homeDir, "Library", "Application Support")
+	default:
+		if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+			base = xdg
+		} else {
+			base = filepath.Join(homeDir, ".config")
+		}
+	}
+	return filepath.Join(base, "antigravity")
 }
 
 // ScanConfigs returns the presence state of every known managed agent's global
