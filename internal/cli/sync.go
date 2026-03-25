@@ -269,7 +269,11 @@ func (s componentSyncStep) Run() error {
 
 	case model.ComponentSDD:
 		for _, adapter := range adapters {
-			res, err := sdd.Inject(s.homeDir, adapter, s.selection.SDDMode, s.selection.ModelAssignments)
+			opts := sdd.InjectOptions{
+				OpenCodeModelAssignments: s.selection.ModelAssignments,
+				ClaudeModelAssignments:   s.selection.ClaudeModelAssignments,
+			}
+			res, err := sdd.Inject(s.homeDir, adapter, s.selection.SDDMode, opts)
 			if err != nil {
 				return fmt.Errorf("sync sdd for %q: %w", adapter.Agent(), err)
 			}

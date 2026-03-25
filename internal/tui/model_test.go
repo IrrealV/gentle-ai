@@ -347,6 +347,88 @@ func TestShouldShowSDDModeScreen(t *testing.T) {
 	}
 }
 
+func TestShouldShowClaudeModelPickerScreen(t *testing.T) {
+	tests := []struct {
+		name       string
+		agents     []model.AgentID
+		components []model.ComponentID
+		want       bool
+	}{
+		{
+			name:       "Claude + SDD = true",
+			agents:     []model.AgentID{model.AgentClaudeCode},
+			components: []model.ComponentID{model.ComponentEngram, model.ComponentSDD},
+			want:       true,
+		},
+		{
+			name:       "OpenCode + SDD = false",
+			agents:     []model.AgentID{model.AgentOpenCode},
+			components: []model.ComponentID{model.ComponentEngram, model.ComponentSDD},
+			want:       false,
+		},
+		{
+			name:       "Claude + no SDD = false",
+			agents:     []model.AgentID{model.AgentClaudeCode},
+			components: []model.ComponentID{model.ComponentEngram},
+			want:       false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewModel(system.DetectionResult{}, "dev")
+			m.Selection.Agents = tt.agents
+			m.Selection.Components = tt.components
+
+			if got := m.shouldShowClaudeModelPickerScreen(); got != tt.want {
+				t.Fatalf("shouldShowClaudeModelPickerScreen() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPresetFlowShowsClaudeModelPickerBeforeDependencyTree(t *testing.T) {
+	m := NewModel(system.DetectionResult{}, "dev")
+	m.Screen = ScreenPreset
+	m.Selection.Agents = []model.AgentID{model.AgentClaudeCode}
+	m.Selection.Components = []model.ComponentID{model.ComponentEngram, model.ComponentSDD}
+	m.Cursor = 0
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	state := updated.(Model)
+
+	if state.Screen != ScreenClaudeModelPicker {
+		t.Fatalf("screen = %v, want %v", state.Screen, ScreenClaudeModelPicker)
+	}
+	if state.ClaudeModelPicker.Preset != screens.ClaudePresetBalanced {
+		t.Fatalf("preset = %v, want %v", state.ClaudeModelPicker.Preset, screens.ClaudePresetBalanced)
+	}
+}
+
+func TestClaudeModelPickerBalancedSelectionStoresAssignments(t *testing.T) {
+	m := NewModel(system.DetectionResult{}, "dev")
+	m.Screen = ScreenClaudeModelPicker
+	m.Selection.Agents = []model.AgentID{model.AgentClaudeCode}
+	m.Selection.Components = []model.ComponentID{model.ComponentEngram, model.ComponentSDD}
+	m.ClaudeModelPicker = screens.NewClaudeModelPickerState()
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	state := updated.(Model)
+
+	if state.Screen != ScreenDependencyTree {
+		t.Fatalf("screen = %v, want %v", state.Screen, ScreenDependencyTree)
+	}
+	if got := state.Selection.ClaudeModelAssignments["orchestrator"]; got != model.ClaudeModelOpus {
+		t.Fatalf("orchestrator = %q, want %q", got, model.ClaudeModelOpus)
+	}
+	if got := state.Selection.ClaudeModelAssignments["default"]; got != model.ClaudeModelSonnet {
+		t.Fatalf("default = %q, want %q", got, model.ClaudeModelSonnet)
+	}
+	if got := state.Selection.ClaudeModelAssignments["sdd-archive"]; got != model.ClaudeModelHaiku {
+		t.Fatalf("sdd-archive = %q, want %q", got, model.ClaudeModelHaiku)
+	}
+}
+
 func screensAgentOptions() []model.AgentID {
 	return screens.AgentOptions()
 }

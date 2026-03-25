@@ -81,11 +81,7 @@ func checkSingleTool(ctx context.Context, tool ToolInfo, currentBuildVersion str
 	// Handle fetch failure.
 	if fetchErr != nil {
 		result.Err = fetchErr
-		if localVersion == "" && tool.DetectCmd != nil {
-			result.Status = NotInstalled
-		} else {
-			result.Status = CheckFailed
-		}
+		result.Status = CheckFailed
 		return result
 	}
 

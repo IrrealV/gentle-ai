@@ -451,11 +451,14 @@ func TestComponentSyncStepRunsSDDInject(t *testing.T) {
 		t.Fatalf("componentSyncStep.Run() SDD error = %v", err)
 	}
 
-	// Verify that the SDD injection created files.
-	// OpenCode AGENTS.md is the system prompt file.
-	agentsMDPath := filepath.Join(home, ".config", "opencode", "AGENTS.md")
-	if _, err := os.Stat(agentsMDPath); err != nil {
-		t.Errorf("expected SDD inject to create %q, got err: %v", agentsMDPath, err)
+	// Verify that the SDD injection created managed OpenCode assets.
+	settingsPath := filepath.Join(home, ".config", "opencode", "opencode.json")
+	if _, err := os.Stat(settingsPath); err != nil {
+		t.Errorf("expected SDD inject to create %q, got err: %v", settingsPath, err)
+	}
+	commandPath := filepath.Join(home, ".config", "opencode", "commands", "sdd-init.md")
+	if _, err := os.Stat(commandPath); err != nil {
+		t.Errorf("expected SDD inject to create %q, got err: %v", commandPath, err)
 	}
 }
 
@@ -530,10 +533,10 @@ func TestRunSyncAppliesManagedFilesystemChanges(t *testing.T) {
 		t.Fatalf("Verify.Ready = false, report = %#v", result.Verify)
 	}
 
-	// SDD file should exist.
-	agentsMDPath := filepath.Join(home, ".config", "opencode", "AGENTS.md")
-	if _, err := os.Stat(agentsMDPath); err != nil {
-		t.Errorf("expected SDD inject to create %q: %v", agentsMDPath, err)
+	// SDD assets should exist.
+	settingsPath := filepath.Join(home, ".config", "opencode", "opencode.json")
+	if _, err := os.Stat(settingsPath); err != nil {
+		t.Errorf("expected SDD inject to create %q: %v", settingsPath, err)
 	}
 }
 
@@ -868,10 +871,10 @@ func TestRunSyncExcludesUnmanagedLookalikeFile(t *testing.T) {
 		t.Errorf("sync modified unmanaged lookalike file: got %q, want %q", string(after), lookalikeContent)
 	}
 
-	// The managed AGENTS.md path (under ~/.config/opencode/) should have been written.
-	managedPath := filepath.Join(home, ".config", "opencode", "AGENTS.md")
+	// The managed OpenCode settings path (under ~/.config/opencode/) should have been written.
+	managedPath := filepath.Join(home, ".config", "opencode", "opencode.json")
 	if _, err := os.Stat(managedPath); err != nil {
-		t.Errorf("expected managed AGENTS.md at %q to be created by sync: %v", managedPath, err)
+		t.Errorf("expected managed OpenCode settings at %q to be created by sync: %v", managedPath, err)
 	}
 }
 

@@ -6,20 +6,21 @@ type Route struct {
 }
 
 var linearRoutes = map[Screen]Route{
-	ScreenWelcome:        {Forward: ScreenDetection},
-	ScreenDetection:      {Forward: ScreenAgents, Backward: ScreenWelcome},
-	ScreenAgents:         {Forward: ScreenPersona, Backward: ScreenDetection},
-	ScreenPersona:        {Forward: ScreenPreset, Backward: ScreenAgents},
-	ScreenPreset:         {Forward: ScreenDependencyTree, Backward: ScreenPersona},
-	ScreenSDDMode:        {Forward: ScreenDependencyTree, Backward: ScreenPreset},
-	ScreenModelPicker:    {Forward: ScreenDependencyTree, Backward: ScreenSDDMode},
-	ScreenDependencyTree: {Forward: ScreenReview, Backward: ScreenPreset},
-	ScreenReview:         {Forward: ScreenInstalling, Backward: ScreenDependencyTree},
-	ScreenInstalling:     {Forward: ScreenComplete, Backward: ScreenReview},
-	ScreenComplete:       {Backward: ScreenInstalling},
-	ScreenBackups:        {Backward: ScreenWelcome},
-	ScreenRestoreConfirm: {Backward: ScreenBackups},
-	ScreenRestoreResult:  {Backward: ScreenBackups},
+	ScreenWelcome:           {Forward: ScreenDetection},
+	ScreenDetection:         {Forward: ScreenAgents, Backward: ScreenWelcome},
+	ScreenAgents:            {Forward: ScreenPersona, Backward: ScreenDetection},
+	ScreenPersona:           {Forward: ScreenPreset, Backward: ScreenAgents},
+	ScreenPreset:            {Forward: ScreenDependencyTree, Backward: ScreenPersona},
+	ScreenClaudeModelPicker: {Forward: ScreenDependencyTree, Backward: ScreenPreset},
+	ScreenSDDMode:           {Forward: ScreenDependencyTree, Backward: ScreenPreset},
+	ScreenModelPicker:       {Forward: ScreenDependencyTree, Backward: ScreenSDDMode},
+	ScreenDependencyTree:    {Forward: ScreenReview, Backward: ScreenPreset},
+	ScreenReview:            {Forward: ScreenInstalling, Backward: ScreenDependencyTree},
+	ScreenInstalling:        {Forward: ScreenComplete, Backward: ScreenReview},
+	ScreenComplete:          {Backward: ScreenInstalling},
+	ScreenBackups:           {Backward: ScreenWelcome},
+	ScreenRestoreConfirm:    {Backward: ScreenBackups},
+	ScreenRestoreResult:     {Backward: ScreenBackups},
 }
 
 func NextScreen(screen Screen) (Screen, bool) {

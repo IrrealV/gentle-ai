@@ -476,7 +476,11 @@ func (s componentApplyStep) Run() error {
 		return nil
 	case model.ComponentSDD:
 		for _, adapter := range adapters {
-			if _, err := sdd.Inject(s.homeDir, adapter, s.selection.SDDMode, s.selection.ModelAssignments); err != nil {
+			opts := sdd.InjectOptions{
+				OpenCodeModelAssignments: s.selection.ModelAssignments,
+				ClaudeModelAssignments:   s.selection.ClaudeModelAssignments,
+			}
+			if _, err := sdd.Inject(s.homeDir, adapter, s.selection.SDDMode, opts); err != nil {
 				return fmt.Errorf("inject sdd for %q: %w", adapter.Agent(), err)
 			}
 		}

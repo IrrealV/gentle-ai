@@ -20,6 +20,11 @@ type InjectionResult struct {
 	Files   []string
 }
 
+type InjectOptions struct {
+	OpenCodeModelAssignments map[string]model.ModelAssignment
+	ClaudeModelAssignments   map[string]model.ClaudeModelAlias
+}
+
 var (
 	npmLookPath = exec.LookPath
 	npmRun      = func(dir string, args ...string) ([]byte, error) {
@@ -41,36 +46,46 @@ func overlayAssetPath(sddMode model.SDDModeID) string {
 	return "opencode/sdd-overlay-single.json"
 }
 
-func Inject(homeDir string, adapter agents.Adapter, sddMode model.SDDModeID, modelAssignments ...map[string]model.ModelAssignment) (InjectionResult, error) {
+func Inject(homeDir string, adapter agents.Adapter, sddMode model.SDDModeID, options ...InjectOptions) (InjectionResult, error) {
 	if !adapter.SupportsSystemPrompt() {
 		return InjectionResult{}, nil
+	}
+
+	var opts InjectOptions
+	if len(options) > 0 {
+		opts = options[0]
 	}
 
 	files := make([]string, 0)
 	changed := false
 
-	// 1. Inject SDD orchestrator into system prompt.
-	switch adapter.SystemPromptStrategy() {
-	case model.StrategyMarkdownSections:
-		result, err := injectMarkdownSections(homeDir, adapter)
-		if err != nil {
-			return InjectionResult{}, err
-		}
-		changed = changed || result.Changed
-		files = append(files, result.Files...)
+	// 1. Inject SDD orchestrator into the global system prompt for agents that
+	// rely on prompt files. OpenCode is handled differently: its orchestrator
+	// instructions must be scoped to the sdd-orchestrator agent only, otherwise
+	// the SDD phase sub-agents inherit coordinator-only delegation rules.
+	if adapter.Agent() != model.AgentOpenCode {
+		switch adapter.SystemPromptStrategy() {
+		case model.StrategyMarkdownSections:
+			result, err := injectMarkdownSections(homeDir, adapter, opts.ClaudeModelAssignments)
+			if err != nil {
+				return InjectionResult{}, err
+			}
+			changed = changed || result.Changed
+			files = append(files, result.Files...)
 
-	case model.StrategyFileReplace, model.StrategyAppendToFile, model.StrategyInstructionsFile:
-		// For FileReplace/AppendToFile agents, the SDD orchestrator is included
-		// in the generic persona asset. However, if the user chose neutral or
-		// custom persona, the SDD content must still be injected. We append the
-		// SDD orchestrator section to the existing system prompt file so it is
-		// always present regardless of persona choice.
-		result, err := injectFileAppend(homeDir, adapter)
-		if err != nil {
-			return InjectionResult{}, err
+		case model.StrategyFileReplace, model.StrategyAppendToFile, model.StrategyInstructionsFile:
+			// For FileReplace/AppendToFile agents, the SDD orchestrator is included
+			// in the generic persona asset. However, if the user chose neutral or
+			// custom persona, the SDD content must still be injected. We append the
+			// SDD orchestrator section to the existing system prompt file so it is
+			// always present regardless of persona choice.
+			result, err := injectFileAppend(homeDir, adapter)
+			if err != nil {
+				return InjectionResult{}, err
+			}
+			changed = changed || result.Changed
+			files = append(files, result.Files...)
 		}
-		changed = changed || result.Changed
-		files = append(files, result.Files...)
 	}
 
 	// 2. Write slash commands (if the agent supports them).
@@ -120,12 +135,21 @@ func Inject(homeDir string, adapter agents.Adapter, sddMode model.SDDModeID, mod
 
 			// Inject model assignments into the overlay before merging.
 			overlayBytes := []byte(overlayContent)
-			var assignments map[string]model.ModelAssignment
-			if len(modelAssignments) > 0 {
-				assignments = modelAssignments[0]
+			overlayBytes, err = inlineOpenCodeSDDPrompts(overlayBytes)
+			if err != nil {
+				return InjectionResult{}, fmt.Errorf("inline OpenCode SDD prompts: %w", err)
 			}
-			if sddMode == model.SDDModeMulti && len(assignments) > 0 {
-				overlayBytes, err = injectModelAssignments(overlayBytes, assignments)
+			assignments := opts.OpenCodeModelAssignments
+			if sddMode != model.SDDModeMulti {
+				assignments = nil
+			}
+
+			rootModelID, err := readOpenCodeRootModel(settingsPath)
+			if err != nil {
+				return InjectionResult{}, err
+			}
+			if rootModelID != "" || len(assignments) > 0 {
+				overlayBytes, err = injectModelAssignments(overlayBytes, assignments, rootModelID)
 				if err != nil {
 					return InjectionResult{}, fmt.Errorf("inject model assignments: %w", err)
 				}
@@ -240,6 +264,40 @@ func Inject(homeDir string, adapter agents.Adapter, sddMode model.SDDModeID, mod
 	}
 
 	return InjectionResult{Changed: changed, Files: files}, nil
+}
+
+func inlineOpenCodeSDDPrompts(overlayBytes []byte) ([]byte, error) {
+	var overlay map[string]any
+	if err := json.Unmarshal(overlayBytes, &overlay); err != nil {
+		return nil, fmt.Errorf("unmarshal OpenCode SDD overlay: %w", err)
+	}
+
+	agentsRaw, ok := overlay["agent"]
+	if !ok {
+		return overlayBytes, nil
+	}
+	agentsMap, ok := agentsRaw.(map[string]any)
+	if !ok {
+		return overlayBytes, nil
+	}
+
+	orchestratorRaw, ok := agentsMap["sdd-orchestrator"]
+	if !ok {
+		return overlayBytes, nil
+	}
+	orchestratorMap, ok := orchestratorRaw.(map[string]any)
+	if !ok {
+		return overlayBytes, nil
+	}
+
+	orchestratorMap["prompt"] = assets.MustRead("generic/sdd-orchestrator.md")
+
+	result, err := json.MarshalIndent(overlay, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("marshal OpenCode SDD overlay: %w", err)
+	}
+
+	return append(result, '\n'), nil
 }
 
 // installOpenCodePlugins copies the background-agents plugin and installs its
@@ -566,9 +624,16 @@ func stripBareOrchestratorSection(content string) string {
 	return result
 }
 
-func injectMarkdownSections(homeDir string, adapter agents.Adapter) (InjectionResult, error) {
+func injectMarkdownSections(homeDir string, adapter agents.Adapter, assignments map[string]model.ClaudeModelAlias) (InjectionResult, error) {
 	promptPath := adapter.SystemPromptFile(homeDir)
 	content := assets.MustRead("claude/sdd-orchestrator.md")
+	if len(assignments) > 0 {
+		var err error
+		content, err = injectClaudeModelAssignments(content, assignments)
+		if err != nil {
+			return InjectionResult{}, err
+		}
+	}
 
 	existing, err := readFileOrEmpty(promptPath)
 	if err != nil {
@@ -592,9 +657,74 @@ func injectMarkdownSections(homeDir string, adapter agents.Adapter) (InjectionRe
 	return InjectionResult{Changed: writeResult.Changed, Files: []string{promptPath}}, nil
 }
 
+var claudeModelAssignmentRowOrder = []string{
+	"orchestrator",
+	"sdd-explore",
+	"sdd-propose",
+	"sdd-spec",
+	"sdd-design",
+	"sdd-tasks",
+	"sdd-apply",
+	"sdd-verify",
+	"sdd-archive",
+	"default",
+}
+
+var claudeModelAssignmentReasons = map[string]string{
+	"orchestrator": "Coordinates, makes decisions",
+	"sdd-explore":  "Reads code, structural - not architectural",
+	"sdd-propose":  "Architectural decisions",
+	"sdd-spec":     "Structured writing",
+	"sdd-design":   "Architecture decisions",
+	"sdd-tasks":    "Mechanical breakdown",
+	"sdd-apply":    "Implementation",
+	"sdd-verify":   "Validation against spec",
+	"sdd-archive":  "Copy and close",
+	"default":      "Non-SDD general delegation",
+}
+
+func injectClaudeModelAssignments(content string, assignments map[string]model.ClaudeModelAlias) (string, error) {
+	const openMarker = "<!-- gentle-ai:sdd-model-assignments -->"
+	const closeMarker = "<!-- /gentle-ai:sdd-model-assignments -->"
+
+	start := strings.Index(content, openMarker)
+	end := strings.Index(content, closeMarker)
+	if start == -1 || end == -1 || end < start {
+		return "", fmt.Errorf("sdd orchestrator asset missing model assignment markers")
+	}
+
+	merged := model.ClaudeModelPresetBalanced()
+	for key, alias := range assignments {
+		if alias.Valid() {
+			merged[key] = alias
+		}
+	}
+
+	replacement := renderClaudeModelAssignmentsSection(merged)
+	start += len(openMarker)
+	return content[:start] + "\n" + replacement + content[end:], nil
+}
+
+func renderClaudeModelAssignmentsSection(assignments map[string]model.ClaudeModelAlias) string {
+	var b strings.Builder
+	b.WriteString("## Model Assignments\n\n")
+	b.WriteString("Read this table at session start (or before first delegation), cache it for the session, and pass the mapped alias in every Agent tool call via the `model` parameter. If a phase is missing, use the `default` row. If you do not have access to the assigned model (for example, no Opus access), substitute `sonnet` and continue.\n\n")
+	b.WriteString("| Phase | Default Model | Reason |\n")
+	b.WriteString("|-------|---------------|--------|\n")
+	for _, key := range claudeModelAssignmentRowOrder {
+		alias := assignments[key]
+		if !alias.Valid() {
+			alias = model.ClaudeModelSonnet
+		}
+		b.WriteString(fmt.Sprintf("| %s | %s | %s |\n", key, alias, claudeModelAssignmentReasons[key]))
+	}
+	b.WriteString("\n")
+	return b.String()
+}
+
 // injectModelAssignments injects "model" fields into sub-agent definitions
 // within the overlay JSON before it is merged into the settings file.
-func injectModelAssignments(overlayBytes []byte, assignments map[string]model.ModelAssignment) ([]byte, error) {
+func injectModelAssignments(overlayBytes []byte, assignments map[string]model.ModelAssignment, rootModelID string) ([]byte, error) {
 	var overlay map[string]any
 	if err := json.Unmarshal(overlayBytes, &overlay); err != nil {
 		return nil, fmt.Errorf("unmarshal overlay for model injection: %w", err)
@@ -609,19 +739,19 @@ func injectModelAssignments(overlayBytes []byte, assignments map[string]model.Mo
 		return overlayBytes, nil
 	}
 
-	for phase, assignment := range assignments {
-		if assignment.ProviderID == "" || assignment.ModelID == "" {
-			continue
-		}
-		agentDef, exists := agents[phase]
-		if !exists {
-			continue
-		}
+	for phase, agentDef := range agents {
 		agentMap, ok := agentDef.(map[string]any)
 		if !ok {
 			continue
 		}
-		agentMap["model"] = assignment.FullID()
+
+		assignment, hasExplicitAssignment := assignments[phase]
+		switch {
+		case hasExplicitAssignment && assignment.ProviderID != "" && assignment.ModelID != "":
+			agentMap["model"] = assignment.FullID()
+		case rootModelID != "":
+			agentMap["model"] = rootModelID
+		}
 	}
 
 	result, err := json.MarshalIndent(overlay, "", "  ")
@@ -629,6 +759,24 @@ func injectModelAssignments(overlayBytes []byte, assignments map[string]model.Mo
 		return nil, fmt.Errorf("marshal overlay after model injection: %w", err)
 	}
 	return append(result, '\n'), nil
+}
+
+func readOpenCodeRootModel(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("read opencode root model from %q: %w", path, err)
+	}
+
+	root := map[string]any{}
+	if err := json.Unmarshal(data, &root); err != nil {
+		return "", nil
+	}
+
+	rootModelID, _ := root["model"].(string)
+	return rootModelID, nil
 }
 
 func readFileOrEmpty(path string) (string, error) {

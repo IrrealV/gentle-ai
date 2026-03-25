@@ -147,22 +147,21 @@ func Execute(ctx context.Context, results []update.UpdateResult, profile system.
 	backupID := ""
 	backupWarning := ""
 	if !dryRun && len(executable) > 0 {
-		fmt.Fprintf(pw, "  ⠹ Creating pre-upgrade backup...\n")
+		sp := NewSpinner(pw, "Creating pre-upgrade backup")
 		snapshotDir := filepath.Join(homeDir, ".gentle-ai", "backups",
 			fmt.Sprintf("upgrade-%s", time.Now().UTC().Format("20060102T150405Z")))
 		manifest, err := snapshotCreator(snapshotDir, configPathsForBackup(homeDir))
 		if err != nil {
-			// G6 gap fix: surface backup failure explicitly instead of silently skipping.
+			sp.Finish(false)
 			backupWarning = fmt.Sprintf("pre-upgrade backup failed — upgrade will run without a backup: %s", err)
 		} else {
-			// Annotate with upgrade source metadata so restore flows show a useful label.
 			manifest.Source = backup.BackupSourceUpgrade
 			manifest.Description = "pre-upgrade snapshot"
 			manifest.CreatedByVersion = AppVersion
 			manifestPath := filepath.Join(snapshotDir, backup.ManifestFilename)
-			// Non-fatal annotation: snapshot is intact even if re-write fails.
 			_ = backup.WriteManifest(manifestPath, manifest)
 			backupID = manifest.ID
+			sp.Finish(true)
 		}
 	}
 
@@ -184,13 +183,10 @@ func Execute(ctx context.Context, results []update.UpdateResult, profile system.
 	// Executable tools: run upgrade strategy.
 	for _, r := range executable {
 		method := effectiveMethod(r.Tool, profile)
-		fmt.Fprintf(pw, "  ⠹ Upgrading %s via %s... (%s → %s)\n", r.Tool.Name, method, r.InstalledVersion, r.LatestVersion)
+		msg := fmt.Sprintf("Upgrading %s via %s (%s → %s)", r.Tool.Name, method, r.InstalledVersion, r.LatestVersion)
+		sp := NewSpinner(pw, msg)
 		toolResult := executeOne(ctx, r, profile, dryRun)
-		if toolResult.Status == UpgradeSucceeded {
-			fmt.Fprintf(pw, "  ✓ %s upgraded\n", r.Tool.Name)
-		} else if toolResult.Status == UpgradeFailed {
-			fmt.Fprintf(pw, "  ✗ %s failed\n", r.Tool.Name)
-		}
+		sp.Finish(toolResult.Status == UpgradeSucceeded)
 		toolResults = append(toolResults, toolResult)
 	}
 

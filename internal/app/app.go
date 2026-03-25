@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -23,6 +24,12 @@ import (
 
 // Version is set from main via ldflags at build time.
 var Version = "dev"
+
+var (
+	updateCheckAll      = update.CheckAll
+	updateCheckFiltered = update.CheckFiltered
+	upgradeExecute      = upgrade.Execute
+)
 
 func Run() error {
 	return RunArgs(os.Args[1:], os.Stdout)
@@ -47,6 +54,13 @@ func RunArgs(args []string, stdout io.Writer) error {
 		return system.EnsureSupportedPlatform(result.System.Profile)
 	}
 
+	// Self-update: check for a newer gentle-ai release and apply it before
+	// CLI/TUI dispatch. Errors are non-fatal — logged and swallowed.
+	profile := cli.ResolveInstallProfile(result)
+	if err := selfUpdate(context.Background(), Version, profile, stdout); err != nil {
+		_, _ = fmt.Fprintf(stdout, "Warning: self-update failed: %v\n", err)
+	}
+
 	if len(args) == 0 {
 		m := tui.NewModel(result, Version)
 		m.ExecuteFn = tuiExecute
@@ -64,9 +78,7 @@ func RunArgs(args []string, stdout io.Writer) error {
 		return nil
 	case "update":
 		profile := cli.ResolveInstallProfile(result)
-		results := update.CheckAll(context.Background(), Version, profile)
-		_, _ = fmt.Fprint(stdout, update.RenderCLI(results))
-		return nil
+		return runUpdate(context.Background(), Version, profile, stdout)
 	case "upgrade":
 		return runUpgrade(context.Background(), args[1:], result, stdout)
 	case "install":
@@ -95,6 +107,12 @@ func RunArgs(args []string, stdout io.Writer) error {
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
+}
+
+func runUpdate(ctx context.Context, currentVersion string, profile system.PlatformProfile, stdout io.Writer) error {
+	results := updateCheckAll(ctx, currentVersion, profile)
+	_, _ = fmt.Fprint(stdout, update.RenderCLI(results))
+	return updateCheckError(results)
 }
 
 // runUpgrade handles the `gentle-ai upgrade [--dry-run] [tool...]` command.
@@ -126,22 +144,38 @@ func runUpgrade(ctx context.Context, args []string, detection system.DetectionRe
 	profile := cli.ResolveInstallProfile(detection)
 
 	// Check for available updates (filtered to requested tools if specified).
-	fmt.Fprintln(stdout, "  ⠹ Checking for updates...")
-	checkResults := update.CheckFiltered(ctx, Version, profile, toolFilter)
+	sp := upgrade.NewSpinner(stdout, "Checking for updates")
+	checkResults := updateCheckFiltered(ctx, Version, profile, toolFilter)
+	checkErr := updateCheckError(checkResults)
+	sp.Finish(checkErr == nil)
+	if checkErr != nil {
+		_, _ = fmt.Fprint(stdout, update.RenderCLI(checkResults))
+		return checkErr
+	}
 
 	// Execute upgrades (no-op if nothing is UpdateAvailable).
-	report := upgrade.Execute(ctx, checkResults, profile, homeDir, dryRun, stdout)
+	report := upgradeExecute(ctx, checkResults, profile, homeDir, dryRun, stdout)
 
 	_, _ = fmt.Fprint(stdout, upgrade.RenderUpgradeReport(report))
 
 	// Return error only if any tool failed (not for skipped/manual).
+	var errs []error
 	for _, r := range report.Results {
 		if r.Status == upgrade.UpgradeFailed && r.Err != nil {
-			return fmt.Errorf("upgrade failed for %q: %w", r.ToolName, r.Err)
+			errs = append(errs, fmt.Errorf("upgrade failed for %q: %w", r.ToolName, r.Err))
 		}
 	}
 
-	return nil
+	return errors.Join(errs...)
+}
+
+func updateCheckError(results []update.UpdateResult) error {
+	failed := update.CheckFailures(results)
+	if len(failed) == 0 {
+		return nil
+	}
+
+	return fmt.Errorf("update check failed for: %s", strings.Join(failed, ", "))
 }
 
 // tuiExecute creates a real install runtime and runs the pipeline with progress reporting.
