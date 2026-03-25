@@ -98,6 +98,7 @@ Download the binary for your platform from [GitHub Releases](https://github.com/
 
 | Topic | Description |
 |-------|-------------|
+| [Intended Usage](docs/intended-usage.md) | How gentle-ai is meant to be used — the mental model |
 | [Agents](docs/agents.md) | Supported agents, feature matrix, config paths, and per-agent notes |
 | [Components, Skills & Presets](docs/components.md) | All components, GGA behavior, skill catalog, and preset definitions |
 | [Usage](docs/usage.md) | Persona modes, interactive TUI, CLI flags, and dependency management |
