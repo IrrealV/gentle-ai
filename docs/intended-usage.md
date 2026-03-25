@@ -53,6 +53,30 @@ If no providers are connected, you will only see single-mode as an option.
 
 ---
 
+## Sub-Agents -- Smarter Than You Think
+
+When the orchestrator delegates work to a sub-agent (say, `sdd-explore` to investigate a codebase), that sub-agent is not a dumb executor running a single script. It's a full agent with its own session, tools, and context.
+
+What makes them "super sub-agents":
+
+1. **They discover skills on their own.** Each sub-agent's first action is to search for the skill registry -- via engram memory or the local `.atl/skill-registry.md` file. If it finds relevant skills (React patterns, Go testing, Angular architecture, etc.), it loads and follows them. The orchestrator doesn't need to spoon-feed skill paths.
+
+2. **They adapt to your project.** A `sdd-apply` sub-agent working on a React project will load React 19 patterns. The same sub-agent working on a Go project will load Go testing conventions. The skills it loads depend on what the registry says is relevant, not a hardcoded list.
+
+3. **They persist their work.** Every sub-agent saves its artifacts to engram before returning. The next sub-agent in the pipeline can pick up exactly where the previous one left off, even across sessions.
+
+This pattern works today on:
+
+| Agent | How sub-agents run |
+|-------|-------------------|
+| **OpenCode** | Native sub-agent system — each phase is a dedicated agent with its own model, tools, and permissions defined in `opencode.json` |
+| **Claude Code** | Via the Agent tool — the orchestrator spawns sub-agents that self-discover skills from the registry |
+| **Others** | SDD runs inline (single session) — the model follows the orchestrator instructions without spawning separate agents |
+
+You don't need to configure any of this. The installer sets it up, and the orchestrator manages delegation automatically.
+
+---
+
 ## Skills -- They Load Automatically
 
 The curated skill library (React 19, Angular, TypeScript, testing patterns, etc.) is installed to your agent's skills directory during setup. The agent detects what you're working on and loads the relevant skills automatically.
