@@ -476,7 +476,11 @@ func (s componentApplyStep) Run() error {
 		return nil
 	case model.ComponentSDD:
 		for _, adapter := range adapters {
-			if _, err := sdd.Inject(s.homeDir, adapter, s.selection.SDDMode, s.selection.ModelAssignments); err != nil {
+			opts := sdd.InjectOptions{
+				OpenCodeModelAssignments: s.selection.ModelAssignments,
+				ClaudeModelAssignments:   s.selection.ClaudeModelAssignments,
+			}
+			if _, err := sdd.Inject(s.homeDir, adapter, s.selection.SDDMode, opts); err != nil {
 				return fmt.Errorf("inject sdd for %q: %w", adapter.Agent(), err)
 			}
 		}
@@ -589,11 +593,11 @@ func ResolveInstallProfile(detection system.DetectionResult) system.PlatformProf
 }
 
 // ggaAvailable reports whether the gga binary is reachable. gga is often
-// installed to ~/.local/bin (the default for install.sh on Linux and Git Bash
-// on Windows), which is not always added to the process PATH. We check the
-// filesystem directly to avoid spawning a subprocess and to work regardless
-// of whether ~/.local/bin has been added to PATH.
-func ggaAvailable(_ system.PlatformProfile) bool {
+// installed to ~/.local/bin (the default for install.sh on Linux and macOS)
+// or ~/bin (the default for install.sh on Windows), which may not be on PATH.
+// We check the filesystem directly to avoid spawning a subprocess and to work
+// regardless of whether the install directory has been added to PATH.
+func ggaAvailable(profile system.PlatformProfile) bool {
 	if _, err := cmdLookPath("gga"); err == nil {
 		return true
 	}
@@ -601,8 +605,15 @@ func ggaAvailable(_ system.PlatformProfile) bool {
 	if err != nil {
 		return false
 	}
-	_, err = osStat(filepath.Join(homeDir, ".local", "bin", "gga"))
-	return err == nil
+	if _, err := osStat(filepath.Join(homeDir, ".local", "bin", "gga")); err == nil {
+		return true
+	}
+	if profile.OS == "windows" {
+		if _, err := osStat(filepath.Join(homeDir, "bin", "gga")); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // runCommandSequence runs each command in the sequence one at a time, stopping on first error.

@@ -67,7 +67,7 @@ type Manifest struct {
 // Old manifests without Source will show "unknown source" as a graceful fallback.
 // Old manifests without FileCount will not show any file count.
 func (m Manifest) DisplayLabel() string {
-	base := fmt.Sprintf("%s — %s", m.Source.Label(), m.CreatedAt.Format("2006-01-02 15:04"))
+	base := fmt.Sprintf("%s — %s", m.Source.Label(), m.CreatedAt.Local().Format("2006-01-02 15:04"))
 	if m.FileCount > 0 {
 		return fmt.Sprintf("%s (%d files)", base, m.FileCount)
 	}

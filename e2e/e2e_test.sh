@@ -1493,6 +1493,7 @@ test_oc_sdd_multi_mode_injection() {
         assert_file_contains "$settings" '"sdd-tasks"' "Has sdd-tasks sub-agent"
         assert_file_contains "$settings" '"sdd-archive"' "Has sdd-archive sub-agent"
         assert_file_contains "$settings" '"subagent"' "Sub-agents have mode subagent"
+        assert_file_contains "$settings" '"model"' "Multi mode: has model overrides"
         assert_file_contains "$settings" '"delegate"' "Has delegate tool"
         assert_file_contains "$settings" '"delegation_read"' "Has delegation_read tool"
         assert_file_contains "$settings" '"delegation_list"' "Has delegation_list tool"
@@ -1504,8 +1505,8 @@ test_oc_sdd_multi_mode_injection() {
     fi
 }
 
-test_oc_sdd_single_mode_no_subagents() {
-    log_test "OpenCode: SDD single mode produces only sdd-orchestrator"
+test_oc_sdd_single_mode_no_models() {
+    log_test "OpenCode: SDD single mode has all agents but no model overrides"
     cleanup_test_env
 
     if $BINARY install --agent opencode --component sdd --persona neutral --sdd-mode single 2>&1; then
@@ -1513,8 +1514,8 @@ test_oc_sdd_single_mode_no_subagents() {
         assert_file_exists "$settings" "opencode.json exists"
         assert_valid_json "$settings" "opencode.json is valid JSON"
         assert_file_contains "$settings" '"sdd-orchestrator"' "Has sdd-orchestrator agent"
-        assert_file_not_contains "$settings" '"sdd-apply"' "Single mode: no sdd-apply sub-agent"
-        assert_file_not_contains "$settings" '"subagent"' "Single mode: no subagent mode entries"
+        assert_file_contains "$settings" '"sdd-apply"' "Single mode: has sdd-apply sub-agent"
+        assert_file_not_contains "$settings" '"model"' "Single mode: no model overrides"
         assert_file_exists "$HOME/.config/opencode/plugins/background-agents.ts" "Single mode: background-agents plugin present"
         assert_file_contains "$HOME/.config/opencode/plugins/background-agents.ts" 'background-agents' "Single mode: plugin has expected content marker"
     else
@@ -1530,7 +1531,8 @@ test_oc_sdd_default_mode_same_as_single() {
         local settings="$HOME/.config/opencode/opencode.json"
         assert_file_exists "$settings" "opencode.json exists"
         assert_file_contains "$settings" '"sdd-orchestrator"' "Has sdd-orchestrator"
-        assert_file_not_contains "$settings" '"sdd-apply"' "Default mode: no sdd-apply sub-agent"
+        assert_file_contains "$settings" '"sdd-apply"' "Default mode: has sdd-apply sub-agent"
+        assert_file_not_contains "$settings" '"model"' "Default mode: no model overrides"
         assert_file_exists "$HOME/.config/opencode/plugins/background-agents.ts" "Default mode: background-agents plugin present"
         assert_file_contains "$HOME/.config/opencode/plugins/background-agents.ts" 'background-agents' "Default mode: plugin has expected content marker"
     else
@@ -1793,7 +1795,7 @@ if [ "${RUN_FULL_E2E:-0}" = "1" ]; then
 
     # Category 9: SDD multi-mode
     test_oc_sdd_multi_mode_injection
-    test_oc_sdd_single_mode_no_subagents
+    test_oc_sdd_single_mode_no_models
     test_oc_sdd_default_mode_same_as_single
 else
     log_skip "Tier 2 tests (set RUN_FULL_E2E=1 to enable)"

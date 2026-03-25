@@ -77,6 +77,7 @@ const (
 	ScreenAgents
 	ScreenPersona
 	ScreenPreset
+	ScreenClaudeModelPicker
 	ScreenSDDMode
 	ScreenDependencyTree
 	ScreenReview
@@ -97,15 +98,16 @@ type Model struct {
 	Version        string
 	SpinnerFrame   int
 
-	Selection      model.Selection
-	Detection      system.DetectionResult
-	DependencyPlan planner.ResolvedPlan
-	Review         planner.ReviewPayload
-	Progress       ProgressState
-	Execution      pipeline.ExecutionResult
-	Backups        []backup.Manifest
-	ModelPicker    screens.ModelPickerState
-	Err            error
+	Selection         model.Selection
+	Detection         system.DetectionResult
+	DependencyPlan    planner.ResolvedPlan
+	Review            planner.ReviewPayload
+	Progress          ProgressState
+	Execution         pipeline.ExecutionResult
+	Backups           []backup.Manifest
+	ModelPicker       screens.ModelPickerState
+	ClaudeModelPicker screens.ClaudeModelPickerState
+	Err               error
 
 	// SelectedBackup holds the manifest chosen on ScreenBackups, used by the
 	// restore confirmation and result screens.
@@ -288,6 +290,8 @@ func (m Model) View() string {
 		return screens.RenderPersona(m.Selection.Persona, m.Cursor)
 	case ScreenPreset:
 		return screens.RenderPreset(m.Selection.Preset, m.Cursor)
+	case ScreenClaudeModelPicker:
+		return screens.RenderClaudeModelPicker(m.ClaudeModelPicker, m.Cursor)
 	case ScreenSDDMode:
 		return screens.RenderSDDMode(m.Selection.SDDMode, m.Cursor)
 	case ScreenModelPicker:
@@ -327,6 +331,22 @@ func (m Model) handleKeyPress(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		handled, updated := screens.HandleModelPickerNav(keyStr, &m.ModelPicker, m.Selection.ModelAssignments)
 		if handled {
 			m.Selection.ModelAssignments = updated
+			return m, nil
+		}
+	}
+
+	if m.Screen == ScreenClaudeModelPicker {
+		handled, updated := screens.HandleClaudeModelPickerNav(keyStr, &m.ClaudeModelPicker, m.Cursor)
+		if handled {
+			if updated != nil {
+				m.Selection.ClaudeModelAssignments = updated
+				if m.shouldShowSDDModeScreen() {
+					m.setScreen(ScreenSDDMode)
+				} else {
+					m.buildDependencyPlan()
+					m.setScreen(ScreenDependencyTree)
+				}
+			}
 			return m, nil
 		}
 	}
@@ -407,6 +427,11 @@ func (m Model) confirmSelection() (tea.Model, tea.Cmd) {
 		if m.Cursor < len(options) {
 			m.Selection.Preset = options[m.Cursor]
 			m.Selection.Components = componentsForPreset(options[m.Cursor])
+			if m.shouldShowClaudeModelPickerScreen() {
+				m.ClaudeModelPicker = screens.NewClaudeModelPickerState()
+				m.setScreen(ScreenClaudeModelPicker)
+				return m, nil
+			}
 			if m.shouldShowSDDModeScreen() {
 				m.setScreen(ScreenSDDMode)
 				return m, nil
@@ -416,6 +441,11 @@ func (m Model) confirmSelection() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.setScreen(ScreenPersona)
+	case ScreenClaudeModelPicker:
+		if !m.ClaudeModelPicker.InCustomMode && m.Cursor == screens.ClaudeModelPickerOptionCount(m.ClaudeModelPicker)-1 {
+			m.setScreen(ScreenPreset)
+			return m, nil
+		}
 	case ScreenSDDMode:
 		options := screens.SDDModeOptions()
 		if m.Cursor < len(options) {
@@ -617,6 +647,16 @@ func (m Model) goBack() Model {
 		return m
 	}
 
+	if m.Screen == ScreenDependencyTree && m.shouldShowClaudeModelPickerScreen() {
+		m.setScreen(ScreenClaudeModelPicker)
+		return m
+	}
+
+	if m.Screen == ScreenSDDMode && m.shouldShowClaudeModelPickerScreen() {
+		m.setScreen(ScreenClaudeModelPicker)
+		return m
+	}
+
 	previous, ok := PreviousScreen(m.Screen)
 	if !ok {
 		return m
@@ -644,6 +684,8 @@ func (m Model) optionCount() int {
 		return len(screens.PersonaOptions()) + 1
 	case ScreenPreset:
 		return len(screens.PresetOptions()) + 1
+	case ScreenClaudeModelPicker:
+		return screens.ClaudeModelPickerOptionCount(m.ClaudeModelPicker)
 	case ScreenSDDMode:
 		return len(screens.SDDModeOptions()) + 1
 	case ScreenModelPicker:
@@ -805,6 +847,11 @@ func extractAvailableUpdates(results []update.UpdateResult) []screens.UpdateInfo
 
 func (m Model) shouldShowSDDModeScreen() bool {
 	return m.Selection.HasAgent(model.AgentOpenCode) &&
+		hasSelectedComponent(m.Selection.Components, model.ComponentSDD)
+}
+
+func (m Model) shouldShowClaudeModelPickerScreen() bool {
+	return m.Selection.HasAgent(model.AgentClaudeCode) &&
 		hasSelectedComponent(m.Selection.Components, model.ComponentSDD)
 }
 

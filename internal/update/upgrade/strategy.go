@@ -40,6 +40,7 @@ func runStrategy(ctx context.Context, r update.UpdateResult, profile system.Plat
 // brewUpgrade runs `brew upgrade <toolName>`.
 func brewUpgrade(ctx context.Context, toolName string) error {
 	cmd := execCommand("brew", "upgrade", toolName)
+	cmd.Stdin = nil
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("brew upgrade %s: %w (output: %s)", toolName, err, string(out))
 	}
@@ -55,6 +56,7 @@ func goInstallUpgrade(ctx context.Context, tool update.ToolInfo, latestVersion s
 	// Pin to the exact release version.
 	target := fmt.Sprintf("%s@v%s", tool.GoImportPath, latestVersion)
 	cmd := execCommand("go", "install", target)
+	cmd.Stdin = nil
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("go install %s: %w (output: %s)", target, err, string(out))
 	}

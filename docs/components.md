@@ -8,8 +8,8 @@
 
 | Component | ID | Description |
 |-----------|-----|-------------|
-| Engram | `engram` | Persistent cross-session memory |
-| SDD | `sdd` | Spec-Driven Development workflow (9 phases) |
+| Engram | `engram` | Persistent cross-session memory — managed automatically by the agent, no manual interaction needed |
+| SDD | `sdd` | Spec-Driven Development workflow (9 phases) — the agent handles SDD organically when the task warrants it, or when you ask; you don't need to learn the commands |
 | Skills | `skills` | Curated coding skill library |
 | Context7 | `context7` | MCP server for live framework/library documentation |
 | Persona | `persona` | Gentleman, neutral, or custom behavior mode |

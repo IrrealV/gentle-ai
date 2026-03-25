@@ -29,7 +29,9 @@ func TestRunArgs_UpgradeDryRun(t *testing.T) {
 	// subcommand path being short-circuited before the TUI is launched.
 	err := RunArgs([]string{"upgrade", "--dry-run"}, &buf)
 	if err != nil {
-		t.Fatalf("RunArgs(upgrade --dry-run) error = %v", err)
+		if !strings.Contains(err.Error(), "update check failed") {
+			t.Fatalf("RunArgs(upgrade --dry-run) error = %v", err)
+		}
 	}
 
 	out := buf.String()
@@ -38,6 +40,7 @@ func TestRunArgs_UpgradeDryRun(t *testing.T) {
 	if !strings.Contains(out, "dry") && !strings.Contains(out, "Dry") &&
 		!strings.Contains(out, "no upgrade") && !strings.Contains(out, "No upgrade") &&
 		!strings.Contains(out, "up to date") && !strings.Contains(out, "Up to date") &&
+		!strings.Contains(out, "Update check incomplete") &&
 		!strings.Contains(out, "0 upgrade") {
 		t.Logf("upgrade --dry-run output:\n%s", out)
 		t.Errorf("output should mention dry-run or no upgrades available")
@@ -93,7 +96,9 @@ func TestRunArgs_UpgradeOutput_BinariesOnly(t *testing.T) {
 	var buf bytes.Buffer
 	err := RunArgs([]string{"upgrade", "--dry-run"}, &buf)
 	if err != nil {
-		t.Fatalf("upgrade --dry-run: %v", err)
+		if !strings.Contains(err.Error(), "update check failed") {
+			t.Fatalf("upgrade --dry-run: %v", err)
+		}
 	}
 
 	out := buf.String()

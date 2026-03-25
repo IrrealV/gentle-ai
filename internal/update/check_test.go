@@ -218,8 +218,10 @@ func TestFetchLatestRelease_Timeout(t *testing.T) {
 // TestFetchLatestRelease_GithubToken verifies that GITHUB_TOKEN is sent as Bearer.
 func TestFetchLatestRelease_GithubToken(t *testing.T) {
 	var gotAuth string
+	var gotUserAgent string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
+		gotUserAgent = r.Header.Get("User-Agent")
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(githubRelease{TagName: "v1.0.0"})
@@ -232,7 +234,7 @@ func TestFetchLatestRelease_GithubToken(t *testing.T) {
 	httpClient = server.Client()
 	httpClient.Transport = &testTransport{server: server}
 
-	t.Setenv("GITHUB_TOKEN", "test-token-123")
+	t.Setenv("GITHUB_TOKEN", "  test-token-123  ")
 
 	_, err := fetchLatestRelease(context.Background(), "owner", "repo")
 	if err != nil {
@@ -241,6 +243,31 @@ func TestFetchLatestRelease_GithubToken(t *testing.T) {
 
 	if gotAuth != "Bearer test-token-123" {
 		t.Fatalf("Authorization = %q, want %q", gotAuth, "Bearer test-token-123")
+	}
+
+	if gotUserAgent != "gentle-ai-update-check" {
+		t.Fatalf("User-Agent = %q, want %q", gotUserAgent, "gentle-ai-update-check")
+	}
+}
+
+// TestResolveGitHubToken_EnvVarWins verifies GITHUB_TOKEN takes precedence over gh CLI.
+func TestResolveGitHubToken_EnvVarWins(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "env-token")
+	if got := resolveGitHubToken(); got != "env-token" {
+		t.Fatalf("resolveGitHubToken() = %q, want %q", got, "env-token")
+	}
+}
+
+// TestResolveGitHubToken_EmptyWhenNoEnvAndNoGh verifies empty string returned when
+// GITHUB_TOKEN is unset and gh is not in PATH.
+func TestResolveGitHubToken_EmptyWhenNoEnvAndNoGh(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "")
+	origLookPath := ghLookPath
+	t.Cleanup(func() { ghLookPath = origLookPath })
+	ghLookPath = func(string) (string, error) { return "", fmt.Errorf("not found") }
+
+	if got := resolveGitHubToken(); got != "" {
+		t.Fatalf("resolveGitHubToken() = %q, want empty", got)
 	}
 }
 
@@ -352,6 +379,50 @@ func TestCheckAll_NetworkError(t *testing.T) {
 	}
 	if results[0].Err == nil {
 		t.Fatalf("gentle-ai expected error, got nil")
+	}
+
+	if results[1].Status != CheckFailed {
+		t.Fatalf("engram status = %q, want %q", results[1].Status, CheckFailed)
+	}
+	if results[2].Status != CheckFailed {
+		t.Fatalf("gga status = %q, want %q", results[2].Status, CheckFailed)
+	}
+}
+
+func TestCheckFiltered_FetchErrorPreservesCheckFailedForMissingTool(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hj, ok := w.(http.Hijacker)
+		if ok {
+			conn, _, _ := hj.Hijack()
+			conn.Close()
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	origClient := httpClient
+	origLookPath := lookPath
+	origExecCommand := execCommand
+	t.Cleanup(func() {
+		httpClient = origClient
+		lookPath = origLookPath
+		execCommand = origExecCommand
+	})
+
+	httpClient = server.Client()
+	httpClient.Transport = &testTransport{server: server}
+	lookPath = func(string) (string, error) { return "", fmt.Errorf("not found") }
+	execCommand = func(name string, args ...string) *exec.Cmd { return exec.Command("false") }
+
+	profile := system.PlatformProfile{OS: "darwin", PackageManager: "brew", Supported: true}
+	results := CheckFiltered(context.Background(), "1.0.0", profile, []string{"engram"})
+
+	if len(results) != 1 {
+		t.Fatalf("len(results) = %d, want 1", len(results))
+	}
+	if results[0].Status != CheckFailed {
+		t.Fatalf("engram status = %q, want %q", results[0].Status, CheckFailed)
 	}
 }
 

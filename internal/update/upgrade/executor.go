@@ -11,6 +11,7 @@ package upgrade
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -117,7 +118,12 @@ func enumerateFilesInDir(dir string) ([]string, error) {
 //
 // The backup snapshot is created before any exec call — this is the architectural
 // guarantee that config is safe even if an upgrade fails mid-way.
-func Execute(ctx context.Context, results []update.UpdateResult, profile system.PlatformProfile, homeDir string, dryRun bool) UpgradeReport {
+func Execute(ctx context.Context, results []update.UpdateResult, profile system.PlatformProfile, homeDir string, dryRun bool, progress ...io.Writer) UpgradeReport {
+	// progress writer for real-time status output (optional, defaults to no-op).
+	var pw io.Writer = io.Discard
+	if len(progress) > 0 && progress[0] != nil {
+		pw = progress[0]
+	}
 	// Separate tools into executable (UpdateAvailable) and dev-build (DevBuild).
 	// DevBuild tools are included in the report as UpgradeSkipped with a clear hint.
 	var executable []update.UpdateResult
@@ -141,21 +147,21 @@ func Execute(ctx context.Context, results []update.UpdateResult, profile system.
 	backupID := ""
 	backupWarning := ""
 	if !dryRun && len(executable) > 0 {
+		sp := NewSpinner(pw, "Creating pre-upgrade backup")
 		snapshotDir := filepath.Join(homeDir, ".gentle-ai", "backups",
 			fmt.Sprintf("upgrade-%s", time.Now().UTC().Format("20060102T150405Z")))
 		manifest, err := snapshotCreator(snapshotDir, configPathsForBackup(homeDir))
 		if err != nil {
-			// G6 gap fix: surface backup failure explicitly instead of silently skipping.
+			sp.Finish(false)
 			backupWarning = fmt.Sprintf("pre-upgrade backup failed — upgrade will run without a backup: %s", err)
 		} else {
-			// Annotate with upgrade source metadata so restore flows show a useful label.
 			manifest.Source = backup.BackupSourceUpgrade
 			manifest.Description = "pre-upgrade snapshot"
 			manifest.CreatedByVersion = AppVersion
 			manifestPath := filepath.Join(snapshotDir, backup.ManifestFilename)
-			// Non-fatal annotation: snapshot is intact even if re-write fails.
 			_ = backup.WriteManifest(manifestPath, manifest)
 			backupID = manifest.ID
+			sp.Finish(true)
 		}
 	}
 
@@ -176,7 +182,11 @@ func Execute(ctx context.Context, results []update.UpdateResult, profile system.
 
 	// Executable tools: run upgrade strategy.
 	for _, r := range executable {
+		method := effectiveMethod(r.Tool, profile)
+		msg := fmt.Sprintf("Upgrading %s via %s (%s → %s)", r.Tool.Name, method, r.InstalledVersion, r.LatestVersion)
+		sp := NewSpinner(pw, msg)
 		toolResult := executeOne(ctx, r, profile, dryRun)
+		sp.Finish(toolResult.Status == UpgradeSucceeded)
 		toolResults = append(toolResults, toolResult)
 	}
 

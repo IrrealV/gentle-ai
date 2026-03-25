@@ -1,6 +1,6 @@
 # Agent Teams Lite — Orchestrator Instructions
 
-Add this section to your existing `~/.claude/CLAUDE.md` or project-level `CLAUDE.md`.
+Bind this prompt to the dedicated `sdd-orchestrator` agent or rule only. Do NOT apply it to executor phase agents such as `sdd-apply` or `sdd-verify`.
 
 ---
 
@@ -71,15 +71,20 @@ SDD is the structured planning layer for substantial changes.
 | `none` | Return results inline only. Recommend enabling engram or openspec. |
 
 ### Commands
-- `/sdd-init` -> run `sdd-init`
-- `/sdd-explore <topic>` -> run `sdd-explore`
-- `/sdd-new <change>` -> run `sdd-explore` then `sdd-propose`
-- `/sdd-continue [change]` -> create next missing artifact in dependency chain
-- `/sdd-ff [change]` -> run `sdd-propose` -> `sdd-spec` -> `sdd-design` -> `sdd-tasks`
-- `/sdd-apply [change]` -> run `sdd-apply` in batches
-- `/sdd-verify [change]` -> run `sdd-verify`
-- `/sdd-archive [change]` -> run `sdd-archive`
-- `/sdd-new`, `/sdd-continue`, and `/sdd-ff` are meta-commands handled by YOU (the orchestrator). Do NOT invoke them as skills.
+
+#### Skills (appear in autocomplete)
+- `/sdd-init` -> Initialize SDD context. Detects stack, bootstraps persistence
+- `/sdd-explore <topic>` -> Investigate an idea. Reads codebase, compares approaches. No files created
+- `/sdd-apply [change]` -> Implement tasks in batches. Checks off items as it goes
+- `/sdd-verify [change]` -> Validate implementation against specs. Reports CRITICAL / WARNING / SUGGESTION
+- `/sdd-archive [change]` -> Close a change and persist final state in the active artifact store
+
+#### Meta-commands (type them directly — the orchestrator handles them, they won't appear in autocomplete)
+- `/sdd-new <change>` -> Start a new change by delegating exploration + proposal to sub-agents
+- `/sdd-continue [change]` -> Run the next dependency-ready phase via sub-agent(s)
+- `/sdd-ff <name>` -> Fast-forward planning with sub-agents (proposal → specs → design → tasks)
+
+> `/sdd-new`, `/sdd-continue`, and `/sdd-ff` are meta-commands handled by YOU (the orchestrator). Do NOT invoke them as skills.
 
 ### Dependency Graph
 ```
@@ -92,12 +97,33 @@ proposal -> specs --> tasks -> apply -> verify -> archive
 ### Result Contract
 Each phase returns: `status`, `executive_summary`, `artifacts`, `next_recommended`, `risks`.
 
+<!-- gentle-ai:sdd-model-assignments -->
+## Model Assignments
+
+Read this table at session start (or before first delegation), cache it for the session, and pass the mapped alias in every Agent tool call via the `model` parameter. If a phase is missing, use the `default` row. If you do not have access to the assigned model (for example, no Opus access), substitute `sonnet` and continue.
+
+| Phase | Default Model | Reason |
+|-------|---------------|--------|
+| orchestrator | opus | Coordinates, makes decisions |
+| sdd-explore | sonnet | Reads code, structural - not architectural |
+| sdd-propose | opus | Architectural decisions |
+| sdd-spec | sonnet | Structured writing |
+| sdd-design | opus | Architecture decisions |
+| sdd-tasks | sonnet | Mechanical breakdown |
+| sdd-apply | sonnet | Implementation |
+| sdd-verify | sonnet | Validation against spec |
+| sdd-archive | haiku | Copy and close |
+| default | sonnet | Non-SDD general delegation |
+
+<!-- /gentle-ai:sdd-model-assignments -->
+
 ### Sub-Agent Launch Pattern
 ALL sub-agent launch prompts MUST include pre-resolved skill references:
 ```
   SKILL: Load `{skill-path}` before starting.
 ```
 The ORCHESTRATOR resolves skill paths from the registry ONCE (at session start or first delegation), then passes the exact path to each sub-agent. Sub-agents do NOT search for the skill registry themselves.
+It ALSO reads the Model Assignments table once per session, caches `phase -> alias`, and includes that alias in every Agent tool call via the `model` parameter.
 
 **Orchestrator skill resolution (do once per session):**
 1. `mem_search(query: "skill-registry", project: "{project}")` → get registry
@@ -154,7 +180,7 @@ Sub-agents retrieve full content via two steps:
 
 ### State and Conventions
 
-Convention files under `~/.claude/skills/_shared/` (global) or `.agent/skills/_shared/` (workspace): `engram-convention.md`, `persistence-contract.md`, `openspec-convention.md`.
+Convention files under the agent's global skills directory (global) or `.agent/skills/_shared/` (workspace): `engram-convention.md`, `persistence-contract.md`, `openspec-convention.md`.
 
 ### Recovery Rule
 
