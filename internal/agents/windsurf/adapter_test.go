@@ -124,6 +124,20 @@ func TestCapabilities(t *testing.T) {
 	if a.SupportsAutoInstall() {
 		t.Fatal("Windsurf should NOT support auto-install (desktop app)")
 	}
+	if !a.SupportsWorkflows() {
+		t.Fatal("Windsurf should support native workflows")
+	}
+}
+
+func TestWorkflowsDir(t *testing.T) {
+	a := NewAdapter()
+
+	workspace := "/home/user/myproject"
+	got := a.WorkflowsDir(workspace)
+	want := filepath.Join(workspace, ".windsurf", "workflows")
+	if got != want {
+		t.Fatalf("WorkflowsDir(%q) = %q, want %q", workspace, got, want)
+	}
 }
 
 func TestDesktopAppNotAutoInstallable(t *testing.T) {

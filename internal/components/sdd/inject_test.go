@@ -11,6 +11,7 @@ import (
 	"github.com/gentleman-programming/gentle-ai/internal/agents"
 	"github.com/gentleman-programming/gentle-ai/internal/agents/claude"
 	"github.com/gentleman-programming/gentle-ai/internal/agents/opencode"
+	windsurfagent "github.com/gentleman-programming/gentle-ai/internal/agents/windsurf"
 	"github.com/gentleman-programming/gentle-ai/internal/assets"
 	"github.com/gentleman-programming/gentle-ai/internal/model"
 	// agents/cursor, agents/gemini, agents/vscode used via agents.NewAdapter()
@@ -18,6 +19,7 @@ import (
 
 func claudeAdapter() agents.Adapter   { return claude.NewAdapter() }
 func opencodeAdapter() agents.Adapter { return opencode.NewAdapter() }
+func windsurfAdapter() agents.Adapter { return windsurfagent.NewAdapter() }
 
 func mockNoPackageManager(t *testing.T) {
 	t.Helper()
@@ -1751,6 +1753,103 @@ func TestInjectModelAssignmentsFunction(t *testing.T) {
 	applyAgent := agents["sdd-apply"].(map[string]any)
 	if m, _ := applyAgent["model"].(string); m != "openai/gpt-5" {
 		t.Fatalf("sdd-apply model = %q, want %q", m, "openai/gpt-5")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Windsurf workflow injection tests
+// ---------------------------------------------------------------------------
+
+func TestInjectWindsurf_WorkflowsCopiedToWorkspace(t *testing.T) {
+	home := t.TempDir()
+	workspace := t.TempDir()
+
+	mockNoPackageManager(t)
+
+	result, err := Inject(home, windsurfAdapter(), "", InjectOptions{WorkspaceDir: workspace})
+	if err != nil {
+		t.Fatalf("Inject(windsurf) error = %v", err)
+	}
+	if !result.Changed {
+		t.Fatal("Inject(windsurf) changed = false")
+	}
+
+	// Verify sdd-new.md was written to .windsurf/workflows/
+	workflowPath := filepath.Join(workspace, ".windsurf", "workflows", "sdd-new.md")
+	if _, err := os.Stat(workflowPath); err != nil {
+		t.Fatalf("workflow file %q not found: %v", workflowPath, err)
+	}
+
+	// Verify the file is in the returned Files slice.
+	found := false
+	for _, f := range result.Files {
+		if f == workflowPath {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("workflow path %q not in result.Files: %v", workflowPath, result.Files)
+	}
+}
+
+func TestInjectWindsurf_WorkflowsIdempotent(t *testing.T) {
+	home := t.TempDir()
+	workspace := t.TempDir()
+
+	mockNoPackageManager(t)
+
+	opts := InjectOptions{WorkspaceDir: workspace}
+
+	if _, err := Inject(home, windsurfAdapter(), "", opts); err != nil {
+		t.Fatalf("first Inject(windsurf) error = %v", err)
+	}
+
+	second, err := Inject(home, windsurfAdapter(), "", opts)
+	if err != nil {
+		t.Fatalf("second Inject(windsurf) error = %v", err)
+	}
+	if second.Changed {
+		t.Fatal("second Inject(windsurf) changed = true — workflow injection is not idempotent")
+	}
+}
+
+func TestInjectWindsurf_WorkflowsSkippedWithoutWorkspaceDir(t *testing.T) {
+	home := t.TempDir()
+
+	mockNoPackageManager(t)
+
+	// No WorkspaceDir → workflow step must be silently skipped.
+	result, err := Inject(home, windsurfAdapter(), "")
+	if err != nil {
+		t.Fatalf("Inject(windsurf) without workspaceDir error = %v", err)
+	}
+
+	for _, f := range result.Files {
+		if strings.Contains(f, ".windsurf") {
+			t.Fatalf("unexpected .windsurf path in result.Files when WorkspaceDir is empty: %q", f)
+		}
+	}
+}
+
+func TestInjectWindsurf_WorkflowContentMatchesAsset(t *testing.T) {
+	home := t.TempDir()
+	workspace := t.TempDir()
+
+	mockNoPackageManager(t)
+
+	if _, err := Inject(home, windsurfAdapter(), "", InjectOptions{WorkspaceDir: workspace}); err != nil {
+		t.Fatalf("Inject(windsurf) error = %v", err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(workspace, ".windsurf", "workflows", "sdd-new.md"))
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+
+	want := assets.MustRead("windsurf/workflows/sdd-new.md")
+	if string(got) != want {
+		t.Fatalf("workflow file content mismatch:\ngot len=%d, want len=%d", len(got), len(want))
 	}
 }
 

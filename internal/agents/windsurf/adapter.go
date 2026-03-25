@@ -145,6 +145,16 @@ func (a *Adapter) SupportsSkills() bool         { return true }
 func (a *Adapter) SupportsSystemPrompt() bool   { return true }
 func (a *Adapter) SupportsMCP() bool            { return true }
 
+// SupportsWorkflows reports that Windsurf can consume native workflow files
+// placed in .windsurf/workflows/ inside the active workspace.
+func (a *Adapter) SupportsWorkflows() bool { return true }
+
+// WorkflowsDir returns the target directory for Windsurf native workflows.
+// Windsurf reads *.md files from .windsurf/workflows/ in the workspace root.
+func (a *Adapter) WorkflowsDir(workspaceDir string) string {
+	return filepath.Join(workspaceDir, ".windsurf", "workflows")
+}
+
 // AgentNotInstallableError is returned when InstallCommand is called on a desktop-only agent.
 type AgentNotInstallableError struct {
 	Agent model.AgentID

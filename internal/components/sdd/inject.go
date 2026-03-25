@@ -23,6 +23,21 @@ type InjectionResult struct {
 type InjectOptions struct {
 	OpenCodeModelAssignments map[string]model.ModelAssignment
 	ClaudeModelAssignments   map[string]model.ClaudeModelAlias
+
+	// WorkspaceDir is the root of the current workspace (e.g. os.Getwd()).
+	// When non-empty and the adapter implements workflowInjector, native
+	// workflow files are copied to <workspaceDir>/.windsurf/workflows/.
+	WorkspaceDir string
+}
+
+// workflowInjector is an optional adapter capability: if an adapter
+// implements this interface, sdd.Inject will copy the embedded workflow
+// assets into the workspace directory provided via InjectOptions.WorkspaceDir.
+// This intentionally does NOT extend agents.Adapter to avoid requiring all
+// adapters to implement no-op stubs.
+type workflowInjector interface {
+	SupportsWorkflows() bool
+	WorkflowsDir(workspaceDir string) string
 }
 
 var (
@@ -228,6 +243,34 @@ func Inject(homeDir string, adapter agents.Adapter, sddMode model.SDDModeID, opt
 				changed = changed || writeResult.Changed
 				files = append(files, path)
 			}
+		}
+	}
+
+	// 3b. Write native workflow files (Windsurf Hybrid-First, and any future
+	// agent that implements the workflowInjector optional interface).
+	if wi, ok := adapter.(workflowInjector); ok && wi.SupportsWorkflows() && opts.WorkspaceDir != "" {
+		workflowsDir := wi.WorkflowsDir(opts.WorkspaceDir)
+		embedDir := "windsurf/workflows"
+		entries, readErr := fs.ReadDir(assets.FS, embedDir)
+		if readErr != nil {
+			return InjectionResult{}, fmt.Errorf("read embedded %s: %w", embedDir, readErr)
+		}
+
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			content, readErr := assets.Read(embedDir + "/" + entry.Name())
+			if readErr != nil {
+				return InjectionResult{}, fmt.Errorf("read embedded workflow %q: %w", entry.Name(), readErr)
+			}
+			path := filepath.Join(workflowsDir, entry.Name())
+			writeResult, err := filemerge.WriteFileAtomic(path, []byte(content), 0o644)
+			if err != nil {
+				return InjectionResult{}, fmt.Errorf("write workflow %q: %w", path, err)
+			}
+			changed = changed || writeResult.Changed
+			files = append(files, path)
 		}
 	}
 
@@ -489,6 +532,7 @@ var sddOrchestratorMarkers = []string{
 	"## Agent Teams Orchestrator",
 	"## Spec-Driven Development (SDD) Orchestrator",
 	"## Spec-Driven Development (SDD)",
+	"# SDD Orchestrator for Cascade",
 }
 
 func hasSDDOrchestrator(content string) bool {
