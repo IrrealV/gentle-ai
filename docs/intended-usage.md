@@ -59,6 +59,8 @@ The curated skill library (React 19, Angular, TypeScript, testing patterns, etc.
 
 You don't need to activate, invoke, or even think about them.
 
+**One exception: the skill registry.** After installing gentle-ai (or after adding/removing skills), it's a good idea to run `/skill-registry` in your agent. This builds a catalog of all available skills so the orchestrator knows exactly what's available and where. You only need to do it once per setup change -- after that, the agent uses it automatically.
+
 ---
 
 ## The Golden Rule
@@ -77,5 +79,6 @@ The less you think about gentle-ai after installing, the better it's working.
 | Just start coding with your AI agent | Memorize SDD phases or commands |
 | Let the agent suggest SDD when a task is big enough | Force SDD on every small task |
 | Trust that engram is saving context for you | Dig into engram's storage or try to manage it |
+| Run `/skill-registry` after installing or changing skills | Forget to update the registry after adding new skills |
 | Say "use sdd" if you know you want structured planning | Worry about which SDD phase comes next |
 | Re-run the installer to update or change your setup | Manually patch skill files or persona instructions |
