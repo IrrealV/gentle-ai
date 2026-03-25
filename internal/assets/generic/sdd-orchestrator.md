@@ -1,6 +1,6 @@
 # Agent Teams Lite — Orchestrator Instructions
 
-Add this as a global rule in your agent's config or as a workspace rule in `.agent/rules/sdd-orchestrator.md`.
+Bind this prompt to the dedicated `sdd-orchestrator` agent or rule only. Do NOT apply it to executor phase agents such as `sdd-apply` or `sdd-verify`.
 
 ---
 

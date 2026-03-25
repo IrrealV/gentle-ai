@@ -1,6 +1,7 @@
 package assets
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -164,5 +165,72 @@ func TestEmbeddedAssetCount(t *testing.T) {
 		if _, err := Read(skillPath); err != nil {
 			t.Fatalf("skill directory %q missing SKILL.md: %v", entry.Name(), err)
 		}
+	}
+}
+
+func TestSDDPhaseCommonForbidsRegistrySelfLookupAndDelegation(t *testing.T) {
+	content := MustRead("skills/_shared/sdd-phase-common.md")
+
+	for _, want := range []string{
+		"EXECUTOR, not an orchestrator",
+		"Do NOT launch sub-agents",
+		"Do NOT search for the skill registry yourself",
+		"Registry resolution is orchestrator-only work",
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("sdd-phase-common missing %q", want)
+		}
+	}
+
+	if strings.Contains(content, `mem_search(query: "skill-registry"`) {
+		t.Fatal("sdd-phase-common should not instruct phase agents to search skill-registry themselves")
+	}
+}
+
+func TestOpenCodeSDDOverlaySubagentsAreExplicitExecutors(t *testing.T) {
+	for _, assetPath := range []string{"opencode/sdd-overlay-single.json", "opencode/sdd-overlay-multi.json"} {
+		t.Run(assetPath, func(t *testing.T) {
+			var root map[string]any
+			if err := json.Unmarshal([]byte(MustRead(assetPath)), &root); err != nil {
+				t.Fatalf("Unmarshal(%q) error = %v", assetPath, err)
+			}
+
+			agents, ok := root["agent"].(map[string]any)
+			if !ok {
+				t.Fatalf("%q missing agent map", assetPath)
+			}
+
+			for _, phase := range []string{"sdd-init", "sdd-explore", "sdd-propose", "sdd-spec", "sdd-design", "sdd-tasks", "sdd-apply", "sdd-verify", "sdd-archive"} {
+				agentDef, ok := agents[phase].(map[string]any)
+				if !ok {
+					t.Fatalf("%q missing %s agent", assetPath, phase)
+				}
+				prompt, _ := agentDef["prompt"].(string)
+				for _, want := range []string{"not the orchestrator", "Do NOT delegate", "Do NOT call task/delegate", "Do NOT launch sub-agents"} {
+					if !strings.Contains(prompt, want) {
+						t.Fatalf("%q phase %s prompt missing %q", assetPath, phase, want)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestSDDOrchestratorAssetsScopedToDedicatedAgent(t *testing.T) {
+	for _, assetPath := range []string{
+		"generic/sdd-orchestrator.md",
+		"claude/sdd-orchestrator.md",
+		"gemini/sdd-orchestrator.md",
+		"codex/sdd-orchestrator.md",
+	} {
+		t.Run(assetPath, func(t *testing.T) {
+			content := MustRead(assetPath)
+			if !strings.Contains(content, "dedicated `sdd-orchestrator` agent or rule only") {
+				t.Fatalf("%q missing dedicated-agent scoping note", assetPath)
+			}
+			if !strings.Contains(content, "Do NOT apply it to executor phase agents") {
+				t.Fatalf("%q missing executor exclusion note", assetPath)
+			}
+		})
 	}
 }

@@ -2,18 +2,18 @@
 
 This file contains boilerplate that is **identical** across all SDD phase skills. Sub-agents MUST load this alongside their phase-specific SKILL.md and follow the sections referenced by their skill.
 
+Executor boundary: every SDD phase agent is an EXECUTOR, not an orchestrator. Do the phase work yourself. Do NOT launch sub-agents, do NOT call `delegate`/`task`, and do NOT bounce work back to another agent unless the phase skill explicitly says to stop and report a blocker.
+
 ---
 
 ## A. Skill Loading
 
 Every phase skill's "Step 1: Load Skills" follows this exact procedure:
 
-1. Check if the orchestrator provided a `SKILL: Load` instruction in your launch prompt. If yes, load that skill.
-2. If no skill path was provided, search for the skill registry yourself:
-   a. Try: `mem_search(query: "skill-registry", project: "{project}")` — if found, `mem_get_observation(id)` for full content
-   b. Fallback: read `.atl/skill-registry.md` if it exists
-3. From the registry, load any skills whose triggers match your current task.
-4. If no registry exists, proceed with your phase skill only.
+1. Check if the orchestrator provided one or more `SKILL: Load` instructions in your launch prompt. If yes, load those exact skills.
+2. Do NOT search for the skill registry yourself. Registry resolution is orchestrator-only work.
+3. If no extra skill path was provided, proceed with your phase skill only.
+4. Never reinterpret yourself as the orchestrator just because no extra skill path was provided.
 
 ---
 

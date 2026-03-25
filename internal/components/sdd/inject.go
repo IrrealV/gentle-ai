@@ -49,28 +49,33 @@ func Inject(homeDir string, adapter agents.Adapter, sddMode model.SDDModeID, mod
 	files := make([]string, 0)
 	changed := false
 
-	// 1. Inject SDD orchestrator into system prompt.
-	switch adapter.SystemPromptStrategy() {
-	case model.StrategyMarkdownSections:
-		result, err := injectMarkdownSections(homeDir, adapter)
-		if err != nil {
-			return InjectionResult{}, err
-		}
-		changed = changed || result.Changed
-		files = append(files, result.Files...)
+	// 1. Inject SDD orchestrator into the global system prompt for agents that
+	// rely on prompt files. OpenCode is handled differently: its orchestrator
+	// instructions must be scoped to the sdd-orchestrator agent only, otherwise
+	// the SDD phase sub-agents inherit coordinator-only delegation rules.
+	if adapter.Agent() != model.AgentOpenCode {
+		switch adapter.SystemPromptStrategy() {
+		case model.StrategyMarkdownSections:
+			result, err := injectMarkdownSections(homeDir, adapter)
+			if err != nil {
+				return InjectionResult{}, err
+			}
+			changed = changed || result.Changed
+			files = append(files, result.Files...)
 
-	case model.StrategyFileReplace, model.StrategyAppendToFile, model.StrategyInstructionsFile:
-		// For FileReplace/AppendToFile agents, the SDD orchestrator is included
-		// in the generic persona asset. However, if the user chose neutral or
-		// custom persona, the SDD content must still be injected. We append the
-		// SDD orchestrator section to the existing system prompt file so it is
-		// always present regardless of persona choice.
-		result, err := injectFileAppend(homeDir, adapter)
-		if err != nil {
-			return InjectionResult{}, err
+		case model.StrategyFileReplace, model.StrategyAppendToFile, model.StrategyInstructionsFile:
+			// For FileReplace/AppendToFile agents, the SDD orchestrator is included
+			// in the generic persona asset. However, if the user chose neutral or
+			// custom persona, the SDD content must still be injected. We append the
+			// SDD orchestrator section to the existing system prompt file so it is
+			// always present regardless of persona choice.
+			result, err := injectFileAppend(homeDir, adapter)
+			if err != nil {
+				return InjectionResult{}, err
+			}
+			changed = changed || result.Changed
+			files = append(files, result.Files...)
 		}
-		changed = changed || result.Changed
-		files = append(files, result.Files...)
 	}
 
 	// 2. Write slash commands (if the agent supports them).
@@ -120,12 +125,24 @@ func Inject(homeDir string, adapter agents.Adapter, sddMode model.SDDModeID, mod
 
 			// Inject model assignments into the overlay before merging.
 			overlayBytes := []byte(overlayContent)
+			overlayBytes, err = inlineOpenCodeSDDPrompts(overlayBytes)
+			if err != nil {
+				return InjectionResult{}, fmt.Errorf("inline OpenCode SDD prompts: %w", err)
+			}
 			var assignments map[string]model.ModelAssignment
 			if len(modelAssignments) > 0 {
 				assignments = modelAssignments[0]
 			}
-			if sddMode == model.SDDModeMulti && len(assignments) > 0 {
-				overlayBytes, err = injectModelAssignments(overlayBytes, assignments)
+			if sddMode != model.SDDModeMulti {
+				assignments = nil
+			}
+
+			rootModelID, err := readOpenCodeRootModel(settingsPath)
+			if err != nil {
+				return InjectionResult{}, err
+			}
+			if rootModelID != "" || len(assignments) > 0 {
+				overlayBytes, err = injectModelAssignments(overlayBytes, assignments, rootModelID)
 				if err != nil {
 					return InjectionResult{}, fmt.Errorf("inject model assignments: %w", err)
 				}
@@ -240,6 +257,40 @@ func Inject(homeDir string, adapter agents.Adapter, sddMode model.SDDModeID, mod
 	}
 
 	return InjectionResult{Changed: changed, Files: files}, nil
+}
+
+func inlineOpenCodeSDDPrompts(overlayBytes []byte) ([]byte, error) {
+	var overlay map[string]any
+	if err := json.Unmarshal(overlayBytes, &overlay); err != nil {
+		return nil, fmt.Errorf("unmarshal OpenCode SDD overlay: %w", err)
+	}
+
+	agentsRaw, ok := overlay["agent"]
+	if !ok {
+		return overlayBytes, nil
+	}
+	agentsMap, ok := agentsRaw.(map[string]any)
+	if !ok {
+		return overlayBytes, nil
+	}
+
+	orchestratorRaw, ok := agentsMap["sdd-orchestrator"]
+	if !ok {
+		return overlayBytes, nil
+	}
+	orchestratorMap, ok := orchestratorRaw.(map[string]any)
+	if !ok {
+		return overlayBytes, nil
+	}
+
+	orchestratorMap["prompt"] = assets.MustRead("generic/sdd-orchestrator.md")
+
+	result, err := json.MarshalIndent(overlay, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("marshal OpenCode SDD overlay: %w", err)
+	}
+
+	return append(result, '\n'), nil
 }
 
 // installOpenCodePlugins copies the background-agents plugin and installs its
@@ -592,7 +643,7 @@ func injectMarkdownSections(homeDir string, adapter agents.Adapter) (InjectionRe
 
 // injectModelAssignments injects "model" fields into sub-agent definitions
 // within the overlay JSON before it is merged into the settings file.
-func injectModelAssignments(overlayBytes []byte, assignments map[string]model.ModelAssignment) ([]byte, error) {
+func injectModelAssignments(overlayBytes []byte, assignments map[string]model.ModelAssignment, rootModelID string) ([]byte, error) {
 	var overlay map[string]any
 	if err := json.Unmarshal(overlayBytes, &overlay); err != nil {
 		return nil, fmt.Errorf("unmarshal overlay for model injection: %w", err)
@@ -607,19 +658,19 @@ func injectModelAssignments(overlayBytes []byte, assignments map[string]model.Mo
 		return overlayBytes, nil
 	}
 
-	for phase, assignment := range assignments {
-		if assignment.ProviderID == "" || assignment.ModelID == "" {
-			continue
-		}
-		agentDef, exists := agents[phase]
-		if !exists {
-			continue
-		}
+	for phase, agentDef := range agents {
 		agentMap, ok := agentDef.(map[string]any)
 		if !ok {
 			continue
 		}
-		agentMap["model"] = assignment.FullID()
+
+		assignment, hasExplicitAssignment := assignments[phase]
+		switch {
+		case hasExplicitAssignment && assignment.ProviderID != "" && assignment.ModelID != "":
+			agentMap["model"] = assignment.FullID()
+		case rootModelID != "":
+			agentMap["model"] = rootModelID
+		}
 	}
 
 	result, err := json.MarshalIndent(overlay, "", "  ")
@@ -627,6 +678,24 @@ func injectModelAssignments(overlayBytes []byte, assignments map[string]model.Mo
 		return nil, fmt.Errorf("marshal overlay after model injection: %w", err)
 	}
 	return append(result, '\n'), nil
+}
+
+func readOpenCodeRootModel(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("read opencode root model from %q: %w", path, err)
+	}
+
+	root := map[string]any{}
+	if err := json.Unmarshal(data, &root); err != nil {
+		return "", nil
+	}
+
+	rootModelID, _ := root["model"].(string)
+	return rootModelID, nil
 }
 
 func readFileOrEmpty(path string) (string, error) {

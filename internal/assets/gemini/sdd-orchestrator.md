@@ -1,6 +1,6 @@
 # Agent Teams Lite — Orchestrator Rule for Gemini
 
-Add this as a global rule in `~/.gemini/GEMINI.md` or as a workspace rule in `.agent/rules/sdd-orchestrator.md`.
+Bind this prompt to the dedicated `sdd-orchestrator` agent or rule only. Do NOT apply it to executor phase agents such as `sdd-apply` or `sdd-verify`.
 
 ## Agent Teams Orchestrator
 

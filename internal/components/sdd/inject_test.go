@@ -19,6 +19,15 @@ import (
 func claudeAdapter() agents.Adapter   { return claude.NewAdapter() }
 func opencodeAdapter() agents.Adapter { return opencode.NewAdapter() }
 
+func mockNoPackageManager(t *testing.T) {
+	t.Helper()
+	orig := npmLookPath
+	npmLookPath = func(string) (string, error) {
+		return "", fmt.Errorf("not found")
+	}
+	t.Cleanup(func() { npmLookPath = orig })
+}
+
 func TestInjectClaudeWritesSectionMarkers(t *testing.T) {
 	home := t.TempDir()
 
@@ -538,6 +547,48 @@ func TestInjectOpenCodeMultiModeIdempotent(t *testing.T) {
 	}
 }
 
+func TestInjectOpenCodeSubagentPromptsStayExecutorScoped(t *testing.T) {
+	home := t.TempDir()
+	mockNoPackageManager(t)
+
+	if _, err := Inject(home, opencodeAdapter(), "multi"); err != nil {
+		t.Fatalf("Inject(multi) error = %v", err)
+	}
+
+	settingsPath := filepath.Join(home, ".config", "opencode", "opencode.json")
+	content, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatalf("ReadFile(opencode.json) error = %v", err)
+	}
+
+	root := map[string]any{}
+	if err := json.Unmarshal(content, &root); err != nil {
+		t.Fatalf("Unmarshal(opencode.json) error = %v", err)
+	}
+
+	agentMap, ok := root["agent"].(map[string]any)
+	if !ok {
+		t.Fatal("opencode.json missing agent map")
+	}
+
+	for _, phase := range []string{"sdd-init", "sdd-explore", "sdd-propose", "sdd-spec", "sdd-design", "sdd-tasks", "sdd-apply", "sdd-verify", "sdd-archive"} {
+		raw, ok := agentMap[phase]
+		if !ok {
+			t.Fatalf("missing sub-agent %q", phase)
+		}
+		agentDef, ok := raw.(map[string]any)
+		if !ok {
+			t.Fatalf("%s has unexpected type: %T", phase, raw)
+		}
+		prompt, _ := agentDef["prompt"].(string)
+		for _, want := range []string{"not the orchestrator", "Do NOT delegate", "Do NOT call task/delegate", "Do NOT launch sub-agents"} {
+			if !strings.Contains(prompt, want) {
+				t.Fatalf("%s prompt missing %q", phase, want)
+			}
+		}
+	}
+}
+
 func TestInjectOpenCodeEmptySDDModeDefaultsSingle(t *testing.T) {
 	home := t.TempDir()
 
@@ -829,6 +880,7 @@ func TestInjectClaudeDeduplicatesBareOrchestratorAtEndOfFile(t *testing.T) {
 
 func TestInjectOpenCodeMultiModeWithModelAssignments(t *testing.T) {
 	home := t.TempDir()
+	mockNoPackageManager(t)
 
 	assignments := map[string]model.ModelAssignment{
 		"sdd-init":  {ProviderID: "anthropic", ModelID: "claude-sonnet-4-20250514"},
@@ -889,6 +941,7 @@ func TestInjectOpenCodeMultiModeWithModelAssignments(t *testing.T) {
 
 func TestInjectOpenCodeMultiModeNoAssignmentsNoModel(t *testing.T) {
 	home := t.TempDir()
+	mockNoPackageManager(t)
 
 	// Pass nil assignments — no model fields should be injected.
 	result, err := Inject(home, opencodeAdapter(), "multi")
@@ -926,6 +979,7 @@ func TestInjectOpenCodeMultiModeNoAssignmentsNoModel(t *testing.T) {
 
 func TestInjectSingleModeIgnoresModelAssignments(t *testing.T) {
 	home := t.TempDir()
+	mockNoPackageManager(t)
 
 	// Even if assignments are provided, single mode should ignore them.
 	assignments := map[string]model.ModelAssignment{
@@ -949,6 +1003,140 @@ func TestInjectSingleModeIgnoresModelAssignments(t *testing.T) {
 	// Single mode has no sub-agents, so model should not appear.
 	if strings.Contains(string(content), `"model"`) {
 		t.Fatal("single mode should not inject model assignments")
+	}
+}
+
+func TestInjectOpenCodeMultiModeUsesRootModelForUnassignedAgents(t *testing.T) {
+	home := t.TempDir()
+	mockNoPackageManager(t)
+
+	settingsPath := filepath.Join(home, ".config", "opencode", "opencode.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(settingsPath, []byte(`{"model":"openai/gpt-5"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(opencode.json) error = %v", err)
+	}
+
+	if _, err := Inject(home, opencodeAdapter(), "multi"); err != nil {
+		t.Fatalf("Inject(multi) error = %v", err)
+	}
+
+	content, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatalf("ReadFile(opencode.json) error = %v", err)
+	}
+
+	root := map[string]any{}
+	if err := json.Unmarshal(content, &root); err != nil {
+		t.Fatalf("Unmarshal(opencode.json) error = %v", err)
+	}
+
+	agentMap, ok := root["agent"].(map[string]any)
+	if !ok {
+		t.Fatal("opencode.json missing agent map")
+	}
+
+	for _, phase := range []string{"sdd-orchestrator", "sdd-init", "sdd-verify"} {
+		agentDef, ok := agentMap[phase].(map[string]any)
+		if !ok {
+			t.Fatalf("phase %q agent not found or wrong type", phase)
+		}
+		if m, _ := agentDef["model"].(string); m != "openai/gpt-5" {
+			t.Fatalf("%s model = %q, want %q", phase, m, "openai/gpt-5")
+		}
+	}
+}
+
+func TestInjectOpenCodeMultiModeExplicitAssignmentsOverrideRootModel(t *testing.T) {
+	home := t.TempDir()
+	mockNoPackageManager(t)
+
+	settingsPath := filepath.Join(home, ".config", "opencode", "opencode.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(settingsPath, []byte(`{"model":"openai/gpt-5"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(opencode.json) error = %v", err)
+	}
+
+	assignments := map[string]model.ModelAssignment{
+		"sdd-apply": {ProviderID: "anthropic", ModelID: "claude-opus-4-6"},
+	}
+
+	if _, err := Inject(home, opencodeAdapter(), "multi", assignments); err != nil {
+		t.Fatalf("Inject(multi, assignments) error = %v", err)
+	}
+
+	content, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatalf("ReadFile(opencode.json) error = %v", err)
+	}
+
+	root := map[string]any{}
+	if err := json.Unmarshal(content, &root); err != nil {
+		t.Fatalf("Unmarshal(opencode.json) error = %v", err)
+	}
+
+	agentMap, ok := root["agent"].(map[string]any)
+	if !ok {
+		t.Fatal("opencode.json missing agent map")
+	}
+
+	applyAgent, ok := agentMap["sdd-apply"].(map[string]any)
+	if !ok {
+		t.Fatal("sdd-apply agent not found or wrong type")
+	}
+	if m, _ := applyAgent["model"].(string); m != "anthropic/claude-opus-4-6" {
+		t.Fatalf("sdd-apply model = %q, want %q", m, "anthropic/claude-opus-4-6")
+	}
+
+	initAgent, ok := agentMap["sdd-init"].(map[string]any)
+	if !ok {
+		t.Fatal("sdd-init agent not found or wrong type")
+	}
+	if m, _ := initAgent["model"].(string); m != "openai/gpt-5" {
+		t.Fatalf("sdd-init model = %q, want %q", m, "openai/gpt-5")
+	}
+}
+
+func TestInjectOpenCodeSingleModeUsesRootModelForAgents(t *testing.T) {
+	home := t.TempDir()
+	mockNoPackageManager(t)
+
+	settingsPath := filepath.Join(home, ".config", "opencode", "opencode.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(settingsPath, []byte(`{"model":"openai/gpt-5"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(opencode.json) error = %v", err)
+	}
+
+	if _, err := Inject(home, opencodeAdapter(), "single"); err != nil {
+		t.Fatalf("Inject(single) error = %v", err)
+	}
+
+	content, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatalf("ReadFile(opencode.json) error = %v", err)
+	}
+
+	root := map[string]any{}
+	if err := json.Unmarshal(content, &root); err != nil {
+		t.Fatalf("Unmarshal(opencode.json) error = %v", err)
+	}
+
+	agentMap, ok := root["agent"].(map[string]any)
+	if !ok {
+		t.Fatal("opencode.json missing agent map")
+	}
+
+	initAgent, ok := agentMap["sdd-init"].(map[string]any)
+	if !ok {
+		t.Fatal("sdd-init agent not found or wrong type")
+	}
+	if m, _ := initAgent["model"].(string); m != "openai/gpt-5" {
+		t.Fatalf("sdd-init model = %q, want %q", m, "openai/gpt-5")
 	}
 }
 
@@ -1470,7 +1658,7 @@ func TestInjectModelAssignmentsFunction(t *testing.T) {
 	overlayJSON := []byte(`{
   "agent": {
     "sdd-init": {"mode": "subagent", "prompt": "test"},
-    "sdd-apply": {"mode": "subagent", "prompt": "test"}
+    "sdd-apply": {"mode": "subagent", "prompt": "test", "model": "anthropic/claude-sonnet-4-6"}
   }
 }`)
 
@@ -1478,7 +1666,7 @@ func TestInjectModelAssignmentsFunction(t *testing.T) {
 		"sdd-init": {ProviderID: "anthropic", ModelID: "claude-sonnet-4-20250514"},
 	}
 
-	result, err := injectModelAssignments(overlayJSON, assignments)
+	result, err := injectModelAssignments(overlayJSON, assignments, "openai/gpt-5")
 	if err != nil {
 		t.Fatalf("injectModelAssignments() error = %v", err)
 	}
@@ -1494,10 +1682,10 @@ func TestInjectModelAssignmentsFunction(t *testing.T) {
 		t.Fatalf("sdd-init model = %q, want %q", m, "anthropic/claude-sonnet-4-20250514")
 	}
 
-	// sdd-apply should NOT have a model field.
+	// sdd-apply should inherit the root model when unassigned.
 	applyAgent := agents["sdd-apply"].(map[string]any)
-	if _, ok := applyAgent["model"]; ok {
-		t.Fatal("sdd-apply should not have model field when not in assignments")
+	if m, _ := applyAgent["model"].(string); m != "openai/gpt-5" {
+		t.Fatalf("sdd-apply model = %q, want %q", m, "openai/gpt-5")
 	}
 }
 
