@@ -84,12 +84,30 @@ mem_save(
 )
 ```
 
+Concrete example — saving a proposal for `add-dark-mode`:
+```
+mem_save(
+  title: "sdd/add-dark-mode/proposal",
+  topic_key: "sdd/add-dark-mode/proposal",
+  type: "architecture",
+  project: "my-app",
+  content: "## Proposal\n\nAdd dark mode toggle..."
+)
+```
+
 Update existing artifact (when you have the observation ID):
 ```
 mem_update(id: {observation-id}, content: "{updated full content}")
 ```
 
 Use `mem_update` when you have the exact ID. Use `mem_save` with same `topic_key` for upserts.
+
+### Browsing All Artifacts for a Change
+
+```
+mem_search(query: "sdd/{change-name}/", project: "{project}")
+→ Returns all artifacts for that change
+```
 
 ## Why This Convention
 

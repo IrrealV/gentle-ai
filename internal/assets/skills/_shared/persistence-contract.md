@@ -27,6 +27,8 @@ Persists every artifact to BOTH Engram and OpenSpec simultaneously:
 - Engram: cross-session recovery, compaction survival, deterministic search
 - OpenSpec: human-readable files, version-controllable artifacts
 
+Write to Engram (per `engram-convention.md`) AND to filesystem (per `openspec-convention.md`) for every artifact.
+
 Read priority: Engram first; fall back to filesystem if Engram returns no results.
 Write behavior: both writes MUST succeed for the operation to be complete.
 Token cost warning: hybrid consumes MORE tokens per operation. Use only when you need both cross-session persistence AND local file artifacts.
@@ -61,18 +63,19 @@ Who reads, who writes:
 - SDD (phase without dependencies, e.g. explore): nobody reads; sub-agent saves its artifact
 
 Why this split:
-- Orchestrator reads for non-SDD: it knows what context is relevant; sub-agents doing own searches waste tokens
-- Sub-agents read for SDD: SDD artifacts are large; orchestrator passes artifact references, not content
-- Sub-agents always write: they have the complete detail; nuance is lost by the time results flow back
+- Orchestrator reads for non-SDD: it knows what context is relevant; sub-agents doing their own searches waste tokens on irrelevant results
+- Sub-agents read for SDD: SDD artifacts are large; inlining them in the orchestrator prompt would consume the entire context window
+- Sub-agents always write: they have the complete detail on what happened; nuance is lost by the time results flow back to the orchestrator
 
 ## Orchestrator Prompt Instructions for Sub-Agents
 
 Non-SDD:
 ```
 PERSISTENCE (MANDATORY):
-If you make important discoveries, decisions, or fix bugs, save them to engram before returning:
+If you make important discoveries, decisions, or fix bugs, you MUST save them to engram before returning:
   mem_save(title: "{short description}", type: "{decision|bugfix|discovery|pattern}",
            project: "{project}", content: "{What, Why, Where, Learned}")
+Do NOT return without saving what you learned. This is how the team builds persistent knowledge across sessions.
 ```
 
 SDD (with dependencies):
@@ -82,7 +85,8 @@ Read these artifacts before starting (search returns truncated previews):
   mem_search(query: "sdd/{change-name}/{type}", project: "{project}") → get ID
   mem_get_observation(id: {id}) → full content (REQUIRED)
 
-PERSISTENCE (MANDATORY):
+PERSISTENCE (MANDATORY — do NOT skip):
+After completing your work, you MUST call:
   mem_save(
     title: "sdd/{change-name}/{artifact-type}",
     topic_key: "sdd/{change-name}/{artifact-type}",
@@ -97,7 +101,8 @@ SDD (no dependencies):
 ```
 Artifact store mode: {engram|openspec|hybrid|none}
 
-PERSISTENCE (MANDATORY):
+PERSISTENCE (MANDATORY — do NOT skip):
+After completing your work, you MUST call:
   mem_save(
     title: "sdd/{change-name}/{artifact-type}",
     topic_key: "sdd/{change-name}/{artifact-type}",

@@ -17,15 +17,15 @@ NOTE: searching the registry is SKILL LOADING, not delegation. You are loading t
 
 ## B. Artifact Retrieval (Engram Mode)
 
-CRITICAL: `mem_search` returns 300-char PREVIEWS, not full content. You MUST call `mem_get_observation(id)` for EVERY artifact. Skipping this produces wrong output.
+**CRITICAL**: `mem_search` returns 300-char PREVIEWS, not full content. You MUST call `mem_get_observation(id)` for EVERY artifact. **Skipping this produces wrong output.**
 
-Run all searches in parallel — do NOT search sequentially.
+**Run all searches in parallel** — do NOT search sequentially.
 
 ```
 mem_search(query: "sdd/{change-name}/{artifact-type}", project: "{project}") → save ID
 ```
 
-Then run all retrievals in parallel:
+Then **run all retrievals in parallel**:
 
 ```
 mem_get_observation(id: {saved_id}) → full content (REQUIRED)
