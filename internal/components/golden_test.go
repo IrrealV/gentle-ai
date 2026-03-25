@@ -433,6 +433,21 @@ func TestGoldenPersona_OpenCode_Custom(t *testing.T) {
 	}
 }
 
+func TestGoldenPersona_Windsurf_Gentleman(t *testing.T) {
+	home := t.TempDir()
+
+	result, err := persona.Inject(home, windsurfAdapter(), model.PersonaGentleman)
+	if err != nil {
+		t.Fatalf("persona.Inject(windsurf, gentleman) error = %v", err)
+	}
+	if !result.Changed {
+		t.Fatalf("persona.Inject(windsurf, gentleman) changed = false")
+	}
+
+	globalRules := readTestFile(t, filepath.Join(home, ".codeium", "windsurf", "memories", "global_rules.md"))
+	assertGolden(t, "persona-windsurf-gentleman.golden", globalRules)
+}
+
 // ---------------------------------------------------------------------------
 // Engram Injector golden tests
 // ---------------------------------------------------------------------------
@@ -529,6 +544,26 @@ func TestGoldenSkills_OpenCode(t *testing.T) {
 	assertGolden(t, "skills-opencode-skill-creator.golden", skillCreator)
 }
 
+func TestGoldenSkills_Windsurf(t *testing.T) {
+	home := t.TempDir()
+
+	skillIDs := []model.SkillID{model.SkillGoTesting, model.SkillCreator}
+	result, err := skills.Inject(home, windsurfAdapter(), skillIDs)
+	if err != nil {
+		t.Fatalf("skills.Inject(windsurf) error = %v", err)
+	}
+	if !result.Changed {
+		t.Fatalf("skills.Inject(windsurf) changed = false")
+	}
+
+	skillsDir := filepath.Join(home, ".codeium", "windsurf", "skills")
+	goTestingSkill := readTestFile(t, filepath.Join(skillsDir, "go-testing", "SKILL.md"))
+	assertGolden(t, "skills-windsurf-go-testing.golden", goTestingSkill)
+
+	skillCreator := readTestFile(t, filepath.Join(skillsDir, "skill-creator", "SKILL.md"))
+	assertGolden(t, "skills-windsurf-skill-creator.golden", skillCreator)
+}
+
 // ---------------------------------------------------------------------------
 // Combined injection golden test (multiple components writing to same CLAUDE.md)
 // ---------------------------------------------------------------------------
@@ -549,6 +584,31 @@ func TestGoldenCombined_Claude(t *testing.T) {
 
 	claudeMD := readTestFile(t, filepath.Join(home, ".claude", "CLAUDE.md"))
 	assertGolden(t, "combined-claude-claudemd.golden", claudeMD)
+}
+
+func TestGoldenCombined_Windsurf(t *testing.T) {
+	home := t.TempDir()
+	workspace := t.TempDir()
+
+	// Windsurf: persona appends to global_rules.md; SDD appends SDD orchestrator
+	// to the same file and copies skills + workflow to workspace.
+	if _, err := persona.Inject(home, windsurfAdapter(), model.PersonaGentleman); err != nil {
+		t.Fatalf("persona.Inject(windsurf) error = %v", err)
+	}
+	if _, err := sdd.Inject(home, windsurfAdapter(), "", sdd.InjectOptions{WorkspaceDir: workspace}); err != nil {
+		t.Fatalf("sdd.Inject(windsurf) error = %v", err)
+	}
+	if _, err := engram.Inject(home, windsurfAdapter()); err != nil {
+		t.Fatalf("engram.Inject(windsurf) error = %v", err)
+	}
+
+	// global_rules.md must contain persona + SDD orchestrator (both appended).
+	globalRules := readTestFile(t, filepath.Join(home, ".codeium", "windsurf", "memories", "global_rules.md"))
+	assertGolden(t, "combined-windsurf-global-rules.golden", globalRules)
+
+	// Workflow must be present in the workspace.
+	workflowMD := readTestFile(t, filepath.Join(workspace, ".windsurf", "workflows", "sdd-new.md"))
+	assertGolden(t, "sdd-windsurf-workflow-sdd-new.golden", workflowMD)
 }
 
 // ---------------------------------------------------------------------------
