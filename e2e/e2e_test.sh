@@ -1439,7 +1439,7 @@ test_integrity_sdd_orchestrator_agent_structure() {
         assert_file_contains "$settings" '"sdd-orchestrator"' "Has sdd-orchestrator"
         assert_file_contains "$settings" '"mode"' "Agent has mode field"
         assert_file_contains "$settings" '"prompt"' "Agent has prompt field"
-        assert_file_contains "$settings" 'AGENTS.md' "Agent prompt references AGENTS.md"
+        assert_file_contains "$settings" 'COORDINATOR' "Agent prompt contains orchestrator instructions"
     else
         log_fail "SDD + persona install for agent structure check failed"
     fi
