@@ -13,9 +13,19 @@ func RuntimeLibDir(homeDir string) string {
 	return filepath.Join(homeDir, ".local", "share", "gga", "lib")
 }
 
+// RuntimeBinDir returns ~/.local/share/gga/bin — where GGA's bash script lives on Linux/Windows.
+func RuntimeBinDir(homeDir string) string {
+	return filepath.Join(homeDir, ".local", "share", "gga", "bin")
+}
+
 // RuntimePRModePath returns the expected pr_mode.sh runtime path.
 func RuntimePRModePath(homeDir string) string {
 	return filepath.Join(RuntimeLibDir(homeDir), "pr_mode.sh")
+}
+
+// RuntimePS1Path returns the expected gga.ps1 path.
+func RuntimePS1Path(homeDir string) string {
+	return filepath.Join(RuntimeBinDir(homeDir), "gga.ps1")
 }
 
 // EnsureRuntimeAssets ensures critical gga runtime files are current.
@@ -35,6 +45,24 @@ func EnsureRuntimeAssets(homeDir string) error {
 
 	if _, err := filemerge.WriteFileAtomic(prModePath, []byte(content), 0o755); err != nil {
 		return fmt.Errorf("write gga runtime file %q: %w", prModePath, err)
+	}
+
+	return nil
+}
+
+// EnsurePowerShellShim writes gga.ps1 to the GGA bin directory.
+// Uses WriteFileAtomic: no-op when content matches, atomic replace otherwise.
+// Must only be called on Windows (caller is responsible for the OS guard).
+func EnsurePowerShellShim(homeDir string) error {
+	ps1Path := RuntimePS1Path(homeDir)
+
+	content, err := assets.Read("gga/gga.ps1")
+	if err != nil {
+		return fmt.Errorf("read embedded gga runtime asset gga.ps1: %w", err)
+	}
+
+	if _, err := filemerge.WriteFileAtomic(ps1Path, []byte(content), 0o755); err != nil {
+		return fmt.Errorf("write gga runtime file %q: %w", ps1Path, err)
 	}
 
 	return nil

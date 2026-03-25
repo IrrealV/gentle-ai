@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -296,6 +297,11 @@ func (s componentSyncStep) Run() error {
 		// NO binary install.
 		if err := gga.EnsureRuntimeAssets(s.homeDir); err != nil {
 			return fmt.Errorf("sync gga runtime assets: %w", err)
+		}
+		if runtime.GOOS == "windows" {
+			if err := gga.EnsurePowerShellShim(s.homeDir); err != nil {
+				return fmt.Errorf("ensure gga powershell shim: %w", err)
+			}
 		}
 		res, err := gga.Inject(s.homeDir, s.agents)
 		if err != nil {

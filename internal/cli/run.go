@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -505,6 +506,11 @@ func (s componentApplyStep) Run() error {
 		}
 		if err := gga.EnsureRuntimeAssets(s.homeDir); err != nil {
 			return fmt.Errorf("ensure gga runtime assets: %w", err)
+		}
+		if runtime.GOOS == "windows" {
+			if err := gga.EnsurePowerShellShim(s.homeDir); err != nil {
+				return fmt.Errorf("ensure gga powershell shim: %w", err)
+			}
 		}
 		if _, err := gga.Inject(s.homeDir, s.agents); err != nil {
 			return fmt.Errorf("inject gga config: %w", err)

@@ -25,7 +25,7 @@ Release binaries are built for `linux`, `darwin`, and `windows` on both `amd64` 
 - **curl** is pre-installed on Windows 10+ and does not require separate installation.
 - **PowerShell** is the default shell when `$SHELL` is not set.
 - Release archives use `.zip` format on Windows (`.tar.gz` on macOS/Linux).
-- **GGA on Windows** only works inside Git Bash. After installation, run `gga init` and `gga install` from Git Bash — not from PowerShell or CMD. This is a GGA limitation, not a gentle-ai limitation.
+- **GGA on Windows** works from both Git Bash and PowerShell. gentle-ai installs a `gga.ps1` shim that automatically delegates to Git Bash, so no manual shell switching is required.
 
 ---
 

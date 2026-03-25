@@ -2,8 +2,11 @@ package gga
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gentleman-programming/gentle-ai/internal/assets"
 )
 
 func TestEnsureRuntimeAssetsCreatesPRModeWhenMissing(t *testing.T) {
@@ -105,5 +108,162 @@ func TestEnsureRuntimeAssetsIsNoOpWhenContentMatches(t *testing.T) {
 	// replaced and the modification time must not change.
 	if stat2.ModTime() != stat1.ModTime() {
 		t.Fatalf("EnsureRuntimeAssets re-wrote the file even though content was identical")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// RuntimeBinDir / RuntimePS1Path helpers
+// ---------------------------------------------------------------------------
+
+func TestRuntimeBinDir(t *testing.T) {
+	tests := []struct {
+		homeDir        string
+		wantSuffix     string
+	}{
+		{"/home/user", filepath.Join(".local", "share", "gga", "bin")},
+		{"/root", filepath.Join(".local", "share", "gga", "bin")},
+	}
+	for _, tc := range tests {
+		got := RuntimeBinDir(tc.homeDir)
+		if !strings.HasSuffix(got, tc.wantSuffix) {
+			t.Errorf("RuntimeBinDir(%q) = %q, want suffix %q", tc.homeDir, got, tc.wantSuffix)
+		}
+	}
+}
+
+func TestRuntimePS1Path(t *testing.T) {
+	tests := []struct {
+		homeDir    string
+		wantSuffix string
+	}{
+		{"/home/user", filepath.Join(".local", "share", "gga", "bin", "gga.ps1")},
+		{"/root", filepath.Join(".local", "share", "gga", "bin", "gga.ps1")},
+	}
+	for _, tc := range tests {
+		got := RuntimePS1Path(tc.homeDir)
+		if !strings.HasSuffix(got, tc.wantSuffix) {
+			t.Errorf("RuntimePS1Path(%q) = %q, want suffix %q", tc.homeDir, got, tc.wantSuffix)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// EnsurePowerShellShim
+// ---------------------------------------------------------------------------
+
+func TestEnsurePowerShellShimCreatesFileWhenMissing(t *testing.T) {
+	home := t.TempDir()
+	path := RuntimePS1Path(home)
+
+	if err := EnsurePowerShellShim(home); err != nil {
+		t.Fatalf("EnsurePowerShellShim() error = %v", err)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%q) error = %v", path, err)
+	}
+
+	// Verify file contains the expected shim sentinel content.
+	text := string(content)
+	if !strings.Contains(text, "Get-Command git") {
+		t.Fatalf("gga.ps1 missing expected content, got: %s", text)
+	}
+}
+
+func TestEnsurePowerShellShimOverwritesStaleShim(t *testing.T) {
+	home := t.TempDir()
+	path := RuntimePS1Path(home)
+	if err := os.MkdirAll(RuntimeBinDir(home), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+
+	const stale = "# stale-shim\n"
+	if err := os.WriteFile(path, []byte(stale), 0o755); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	if err := EnsurePowerShellShim(home); err != nil {
+		t.Fatalf("EnsurePowerShellShim() error = %v", err)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%q) error = %v", path, err)
+	}
+
+	// The stale content must have been replaced.
+	if string(content) == stale {
+		t.Fatalf("EnsurePowerShellShim did not overwrite stale gga.ps1")
+	}
+	if !strings.Contains(string(content), "Get-Command git") {
+		t.Fatalf("overwritten gga.ps1 missing expected embedded content")
+	}
+}
+
+// TestEnsurePowerShellShimIsNoOpWhenContentMatches verifies idempotency:
+// when gga.ps1 already contains the correct embedded content,
+// EnsurePowerShellShim must not modify it (WriteFileAtomic no-op).
+func TestEnsurePowerShellShimIsNoOpWhenContentMatches(t *testing.T) {
+	home := t.TempDir()
+
+	// First call creates the file from the embedded asset.
+	if err := EnsurePowerShellShim(home); err != nil {
+		t.Fatalf("first EnsurePowerShellShim() error = %v", err)
+	}
+
+	path := RuntimePS1Path(home)
+	contentAfterFirst, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+
+	stat1, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat() error = %v", err)
+	}
+
+	// Second call — should be a no-op because content matches.
+	if err := EnsurePowerShellShim(home); err != nil {
+		t.Fatalf("second EnsurePowerShellShim() error = %v", err)
+	}
+
+	contentAfterSecond, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+
+	if string(contentAfterFirst) != string(contentAfterSecond) {
+		t.Fatalf("content changed between two calls with identical embedded content")
+	}
+
+	stat2, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat() error = %v", err)
+	}
+
+	// WriteFileAtomic returns early when content matches, so the file is not
+	// replaced and the modification time must not change.
+	if stat2.ModTime() != stat1.ModTime() {
+		t.Fatalf("EnsurePowerShellShim re-wrote the file even though content was identical")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Asset embedding
+// ---------------------------------------------------------------------------
+
+// TestAssetGGAPS1IsEmbeddedAndReadable verifies the gga.ps1 asset is
+// correctly embedded and can be read via the assets package.
+func TestAssetGGAPS1IsEmbeddedAndReadable(t *testing.T) {
+	content, err := assets.Read("gga/gga.ps1")
+	if err != nil {
+		t.Fatalf("assets.Read(\"gga/gga.ps1\") error = %v", err)
+	}
+	if content == "" {
+		t.Fatal("assets.Read(\"gga/gga.ps1\") returned empty content")
+	}
+	if !strings.Contains(content, "Get-Command git") {
+		t.Fatalf("embedded gga.ps1 missing expected content, got: %s", content)
 	}
 }
