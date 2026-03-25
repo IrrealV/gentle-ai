@@ -147,6 +147,7 @@ func DiscoverAgents(homeDir string) []model.AgentID {
 // no agentInstallStep, no engram setup, no persona.
 type syncRuntime struct {
 	homeDir      string
+	workspaceDir string
 	selection    model.Selection
 	agentIDs     []model.AgentID
 	backupRoot   string
@@ -160,12 +161,15 @@ func newSyncRuntime(homeDir string, selection model.Selection) (*syncRuntime, er
 		return nil, fmt.Errorf("create backup root directory %q: %w", backupRoot, err)
 	}
 
+	workspaceDir, _ := os.Getwd()
+
 	return &syncRuntime{
-		homeDir:    homeDir,
-		selection:  selection,
-		agentIDs:   selection.Agents,
-		backupRoot: backupRoot,
-		state:      &runtimeState{},
+		homeDir:      homeDir,
+		workspaceDir: workspaceDir,
+		selection:    selection,
+		agentIDs:     selection.Agents,
+		backupRoot:   backupRoot,
+		state:        &runtimeState{},
 	}, nil
 }
 
@@ -195,6 +199,7 @@ func (r *syncRuntime) stagePlan() pipeline.StagePlan {
 			id:           "sync:component:" + string(component),
 			component:    component,
 			homeDir:      r.homeDir,
+			workspaceDir: r.workspaceDir,
 			agents:       r.agentIDs,
 			selection:    r.selection,
 			filesChanged: &r.filesChanged,
@@ -232,6 +237,7 @@ type componentSyncStep struct {
 	id           string
 	component    model.ComponentID
 	homeDir      string
+	workspaceDir string
 	agents       []model.AgentID
 	selection    model.Selection
 	filesChanged *int
@@ -272,6 +278,7 @@ func (s componentSyncStep) Run() error {
 			opts := sdd.InjectOptions{
 				OpenCodeModelAssignments: s.selection.ModelAssignments,
 				ClaudeModelAssignments:   s.selection.ClaudeModelAssignments,
+				WorkspaceDir:             s.workspaceDir,
 			}
 			res, err := sdd.Inject(s.homeDir, adapter, s.selection.SDDMode, opts)
 			if err != nil {

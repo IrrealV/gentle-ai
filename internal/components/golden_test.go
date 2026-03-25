@@ -297,8 +297,9 @@ func TestGoldenSDD_Codex(t *testing.T) {
 
 func TestGoldenSDD_Windsurf(t *testing.T) {
 	home := t.TempDir()
+	workspace := t.TempDir()
 
-	result, err := sdd.Inject(home, windsurfAdapter(), "")
+	result, err := sdd.Inject(home, windsurfAdapter(), "", sdd.InjectOptions{WorkspaceDir: workspace})
 	if err != nil {
 		t.Fatalf("sdd.Inject(windsurf) error = %v", err)
 	}
@@ -323,6 +324,11 @@ func TestGoldenSDD_Windsurf(t *testing.T) {
 			t.Errorf("expected SDD skill file %q not found: %v", name, err)
 		}
 	}
+
+	// Verify native Cascade workflow was copied to .windsurf/workflows/.
+	workflowPath := filepath.Join(workspace, ".windsurf", "workflows", "sdd-new.md")
+	workflowContent := readTestFile(t, workflowPath)
+	assertGolden(t, "sdd-windsurf-workflow-sdd-new.golden", workflowContent)
 }
 
 // ---------------------------------------------------------------------------
