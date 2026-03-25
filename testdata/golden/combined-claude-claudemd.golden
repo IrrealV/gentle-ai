@@ -63,7 +63,7 @@ IMPORTANT: When you detect any of these contexts, IMMEDIATELY read the correspon
 <!-- gentle-ai:sdd-orchestrator -->
 # Agent Teams Lite — Orchestrator Instructions
 
-Add this section to your existing `~/.claude/CLAUDE.md` or project-level `CLAUDE.md`.
+Add this as a global rule in your agent's config or as a workspace rule in `.agent/rules/sdd-orchestrator.md`.
 
 ---
 
@@ -222,7 +222,7 @@ Sub-agents retrieve full content via two steps:
 
 ### State and Conventions
 
-Convention files under `~/.claude/skills/_shared/` (global) or `.agent/skills/_shared/` (workspace): `engram-convention.md`, `persistence-contract.md`, `openspec-convention.md`.
+Convention files under the agent's global skills directory (global) or `.agent/skills/_shared/` (workspace): `engram-convention.md`, `persistence-contract.md`, `openspec-convention.md`.
 
 ### Recovery Rule
 

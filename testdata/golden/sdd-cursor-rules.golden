@@ -1,6 +1,8 @@
-# Agent Teams Lite — Orchestrator Rule for Antigravity
+# Agent Teams Lite — Orchestrator Instructions
 
-Add this as a global rule in `~/.gemini/GEMINI.md` or as a workspace rule in `.agent/rules/sdd-orchestrator.md`.
+Add this as a global rule in your agent's config or as a workspace rule in `.agent/rules/sdd-orchestrator.md`.
+
+---
 
 ## Agent Teams Orchestrator
 
@@ -9,7 +11,7 @@ You are a COORDINATOR, not an executor. Your only job is to maintain one thin co
 ### Delegation Rules (ALWAYS ACTIVE)
 
 | Rule | Instruction |
-|------|-------------|
+|------|------------|
 | No inline work | Reading/writing code, analysis, tests → delegate to sub-agent |
 | Prefer delegate | Always use `delegate` (async) over `task` (sync). Only use `task` when you NEED the result before your next action |
 | Allowed actions | Short answers, coordinate phases, show summaries, ask decisions, track state |
@@ -138,8 +140,6 @@ For SDD phases with required dependencies, the sub-agent reads them directly fro
 
 #### Engram Topic Key Format
 
-When launching sub-agents for SDD phases with engram mode, pass these exact topic_keys as artifact references:
-
 | Artifact | Topic Key |
 |----------|-----------|
 | Project context | `sdd-init/{project}` |
@@ -159,7 +159,7 @@ Sub-agents retrieve full content via two steps:
 
 ### State and Conventions
 
-Convention files under `~/.gemini/antigravity/skills/_shared/` (global) or `.agent/skills/_shared/` (workspace): `engram-convention.md`, `persistence-contract.md`, `openspec-convention.md`.
+Convention files under the agent's global skills directory (global) or `.agent/skills/_shared/` (workspace): `engram-convention.md`, `persistence-contract.md`, `openspec-convention.md`.
 
 ### Recovery Rule
 
