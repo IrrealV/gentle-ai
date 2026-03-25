@@ -126,10 +126,11 @@ func runUpgrade(ctx context.Context, args []string, detection system.DetectionRe
 	profile := cli.ResolveInstallProfile(detection)
 
 	// Check for available updates (filtered to requested tools if specified).
+	fmt.Fprintln(stdout, "  ⠹ Checking for updates...")
 	checkResults := update.CheckFiltered(ctx, Version, profile, toolFilter)
 
 	// Execute upgrades (no-op if nothing is UpdateAvailable).
-	report := upgrade.Execute(ctx, checkResults, profile, homeDir, dryRun)
+	report := upgrade.Execute(ctx, checkResults, profile, homeDir, dryRun, stdout)
 
 	_, _ = fmt.Fprint(stdout, upgrade.RenderUpgradeReport(report))
 

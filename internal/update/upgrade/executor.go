@@ -11,6 +11,7 @@ package upgrade
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -117,7 +118,12 @@ func enumerateFilesInDir(dir string) ([]string, error) {
 //
 // The backup snapshot is created before any exec call — this is the architectural
 // guarantee that config is safe even if an upgrade fails mid-way.
-func Execute(ctx context.Context, results []update.UpdateResult, profile system.PlatformProfile, homeDir string, dryRun bool) UpgradeReport {
+func Execute(ctx context.Context, results []update.UpdateResult, profile system.PlatformProfile, homeDir string, dryRun bool, progress ...io.Writer) UpgradeReport {
+	// progress writer for real-time status output (optional, defaults to no-op).
+	var pw io.Writer = io.Discard
+	if len(progress) > 0 && progress[0] != nil {
+		pw = progress[0]
+	}
 	// Separate tools into executable (UpdateAvailable) and dev-build (DevBuild).
 	// DevBuild tools are included in the report as UpgradeSkipped with a clear hint.
 	var executable []update.UpdateResult
@@ -141,6 +147,7 @@ func Execute(ctx context.Context, results []update.UpdateResult, profile system.
 	backupID := ""
 	backupWarning := ""
 	if !dryRun && len(executable) > 0 {
+		fmt.Fprintf(pw, "  ⠹ Creating pre-upgrade backup...\n")
 		snapshotDir := filepath.Join(homeDir, ".gentle-ai", "backups",
 			fmt.Sprintf("upgrade-%s", time.Now().UTC().Format("20060102T150405Z")))
 		manifest, err := snapshotCreator(snapshotDir, configPathsForBackup(homeDir))
@@ -176,7 +183,14 @@ func Execute(ctx context.Context, results []update.UpdateResult, profile system.
 
 	// Executable tools: run upgrade strategy.
 	for _, r := range executable {
+		method := effectiveMethod(r.Tool, profile)
+		fmt.Fprintf(pw, "  ⠹ Upgrading %s via %s... (%s → %s)\n", r.Tool.Name, method, r.InstalledVersion, r.LatestVersion)
 		toolResult := executeOne(ctx, r, profile, dryRun)
+		if toolResult.Status == UpgradeSucceeded {
+			fmt.Fprintf(pw, "  ✓ %s upgraded\n", r.Tool.Name)
+		} else if toolResult.Status == UpgradeFailed {
+			fmt.Fprintf(pw, "  ✗ %s failed\n", r.Tool.Name)
+		}
 		toolResults = append(toolResults, toolResult)
 	}
 

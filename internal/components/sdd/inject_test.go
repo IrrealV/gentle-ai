@@ -570,12 +570,40 @@ func TestInjectOpenCodeEmptySDDModeDefaultsSingle(t *testing.T) {
 		t.Fatalf("agent key has unexpected type: %T", agentRaw)
 	}
 
-	// Empty mode defaults to single — only sdd-orchestrator, no sub-agents.
+	// Empty mode defaults to single — orchestrator + 9 sub-agents = 10 agents.
 	if _, ok := agentMap["sdd-orchestrator"]; !ok {
 		t.Fatal("missing sdd-orchestrator agent")
 	}
-	if _, ok := agentMap["sdd-apply"]; ok {
-		t.Fatal("sdd-apply sub-agent should NOT be present in single/default mode")
+	if len(agentMap) != 10 {
+		t.Fatalf("agent count = %d, want 10", len(agentMap))
+	}
+
+	// Verify orchestrator mode is "primary".
+	orchestratorRaw, ok := agentMap["sdd-orchestrator"]
+	if !ok {
+		t.Fatal("missing sdd-orchestrator agent")
+	}
+	orchestratorAgent, ok := orchestratorRaw.(map[string]any)
+	if !ok {
+		t.Fatalf("sdd-orchestrator has unexpected type: %T", orchestratorRaw)
+	}
+	if mode, _ := orchestratorAgent["mode"].(string); mode != "primary" {
+		t.Fatalf("sdd-orchestrator mode = %q, want %q", mode, "primary")
+	}
+
+	// Verify sub-agents are present with mode "subagent".
+	for _, subAgent := range []string{"sdd-init", "sdd-apply", "sdd-verify", "sdd-explore", "sdd-propose", "sdd-spec", "sdd-design", "sdd-tasks", "sdd-archive"} {
+		raw, ok := agentMap[subAgent]
+		if !ok {
+			t.Fatalf("missing sub-agent %q", subAgent)
+		}
+		agent, ok := raw.(map[string]any)
+		if !ok {
+			t.Fatalf("%s has unexpected type: %T", subAgent, raw)
+		}
+		if m, _ := agent["mode"].(string); m != "subagent" {
+			t.Fatalf("%s mode = %q, want %q", subAgent, m, "subagent")
+		}
 	}
 }
 
@@ -625,13 +653,13 @@ func TestInjectOpenCodeSingleToMultiSwitch(t *testing.T) {
 
 	settingsPath := filepath.Join(home, ".config", "opencode", "opencode.json")
 
-	// Verify only orchestrator, no sub-agents.
+	// Single mode now has orchestrator + 9 sub-agents (same as multi).
 	content, _ := os.ReadFile(settingsPath)
-	if strings.Contains(string(content), `"sdd-apply"`) {
-		t.Fatal("single mode should not have sdd-apply")
+	if !strings.Contains(string(content), `"sdd-apply"`) {
+		t.Fatal("single mode should have sdd-apply")
 	}
 
-	// Second: inject multi mode.
+	// Second: inject multi mode — should add model fields.
 	result, err := Inject(home, opencodeAdapter(), "multi")
 	if err != nil {
 		t.Fatalf("Inject(multi) error = %v", err)
@@ -656,6 +684,15 @@ func TestInjectOpenCodeSingleToMultiSwitch(t *testing.T) {
 	}
 	if _, ok := agentMap["sdd-apply"]; !ok {
 		t.Fatal("missing sdd-apply after switch to multi")
+	}
+
+	// Multi mode should have model fields (from the overlay).
+	applyAgent, ok := agentMap["sdd-apply"].(map[string]any)
+	if !ok {
+		t.Fatal("sdd-apply has unexpected type after switch to multi")
+	}
+	if _, hasModel := applyAgent["model"]; !hasModel {
+		t.Fatal("sdd-apply should have model field after switch to multi")
 	}
 }
 
@@ -840,13 +877,13 @@ func TestInjectOpenCodeMultiModeWithModelAssignments(t *testing.T) {
 		t.Fatalf("sdd-apply model = %q, want %q", m, "openai/gpt-4o")
 	}
 
-	// Verify unassigned phases do NOT have a model field.
+	// Unassigned phases keep their default model from the multi overlay.
 	verifyAgent, ok := agentMap["sdd-verify"].(map[string]any)
 	if !ok {
 		t.Fatal("sdd-verify agent not found or wrong type")
 	}
-	if _, hasModel := verifyAgent["model"]; hasModel {
-		t.Fatal("sdd-verify should not have a model field when not assigned")
+	if m, _ := verifyAgent["model"].(string); m != "anthropic/claude-opus-4-6" {
+		t.Fatalf("sdd-verify model = %q, want default %q", m, "anthropic/claude-opus-4-6")
 	}
 }
 
@@ -874,13 +911,15 @@ func TestInjectOpenCodeMultiModeNoAssignmentsNoModel(t *testing.T) {
 	}
 
 	agentMap, _ := root["agent"].(map[string]any)
+	// Multi overlay now includes default model fields for all agents.
+	// When no assignments are given, the defaults from the overlay are preserved.
 	for _, phase := range []string{"sdd-init", "sdd-apply", "sdd-verify"} {
 		agentDef, ok := agentMap[phase].(map[string]any)
 		if !ok {
-			continue
+			t.Fatalf("phase %q agent not found or wrong type", phase)
 		}
-		if _, hasModel := agentDef["model"]; hasModel {
-			t.Fatalf("phase %q should not have model field when no assignments given", phase)
+		if _, hasModel := agentDef["model"]; !hasModel {
+			t.Fatalf("phase %q should have default model field from multi overlay", phase)
 		}
 	}
 }

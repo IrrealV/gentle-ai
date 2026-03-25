@@ -4,6 +4,7 @@
       "description": "Implement code changes from task definitions",
       "hidden": true,
       "mode": "subagent",
+      "model": "anthropic/claude-sonnet-4-6",
       "prompt": "You are an SDD sub-agent for the apply phase. Read your skill file at ~/.config/opencode/skills/sdd-apply/SKILL.md and follow its instructions. It includes a Step 1 for loading the skill registry — do NOT skip it.",
       "tools": {
         "bash": true,
@@ -16,6 +17,7 @@
       "description": "Archive completed change artifacts",
       "hidden": true,
       "mode": "subagent",
+      "model": "anthropic/claude-sonnet-4-6",
       "prompt": "You are an SDD sub-agent for the archive phase. Read your skill file at ~/.config/opencode/skills/sdd-archive/SKILL.md and follow its instructions. It includes a Step 1 for loading the skill registry — do NOT skip it.",
       "tools": {
         "bash": true,
@@ -28,6 +30,7 @@
       "description": "Create technical design from proposals",
       "hidden": true,
       "mode": "subagent",
+      "model": "anthropic/claude-opus-4-6",
       "prompt": "You are an SDD sub-agent for the design phase. Read your skill file at ~/.config/opencode/skills/sdd-design/SKILL.md and follow its instructions. It includes a Step 1 for loading the skill registry — do NOT skip it.",
       "tools": {
         "bash": true,
@@ -40,6 +43,7 @@
       "description": "Investigate codebase and think through ideas",
       "hidden": true,
       "mode": "subagent",
+      "model": "anthropic/claude-sonnet-4-6",
       "prompt": "You are an SDD sub-agent for the explore phase. Read your skill file at ~/.config/opencode/skills/sdd-explore/SKILL.md and follow its instructions. It includes a Step 1 for loading the skill registry — do NOT skip it.",
       "tools": {
         "bash": true,
@@ -52,6 +56,7 @@
       "description": "Bootstrap SDD context and project configuration",
       "hidden": true,
       "mode": "subagent",
+      "model": "anthropic/claude-sonnet-4-6",
       "prompt": "You are an SDD sub-agent for the init phase. Read your skill file at ~/.config/opencode/skills/sdd-init/SKILL.md and follow its instructions. It includes a Step 1 for loading the skill registry — do NOT skip it.",
       "tools": {
         "bash": true,
@@ -63,6 +68,7 @@
     "sdd-orchestrator": {
       "description": "Agent Teams Orchestrator - coordinates sub-agents, never does work inline",
       "mode": "primary",
+      "model": "anthropic/claude-sonnet-4-6",
       "permission": {
         "task": {
           "*": "deny",
@@ -84,6 +90,7 @@
       "description": "Create change proposals from explorations",
       "hidden": true,
       "mode": "subagent",
+      "model": "anthropic/claude-sonnet-4-6",
       "prompt": "You are an SDD sub-agent for the propose phase. Read your skill file at ~/.config/opencode/skills/sdd-propose/SKILL.md and follow its instructions. It includes a Step 1 for loading the skill registry — do NOT skip it.",
       "tools": {
         "bash": true,
@@ -96,6 +103,7 @@
       "description": "Write detailed specifications from proposals",
       "hidden": true,
       "mode": "subagent",
+      "model": "anthropic/claude-opus-4-6",
       "prompt": "You are an SDD sub-agent for the spec phase. Read your skill file at ~/.config/opencode/skills/sdd-spec/SKILL.md and follow its instructions. It includes a Step 1 for loading the skill registry — do NOT skip it.",
       "tools": {
         "bash": true,
@@ -108,6 +116,7 @@
       "description": "Break down specs and designs into implementation tasks",
       "hidden": true,
       "mode": "subagent",
+      "model": "anthropic/claude-sonnet-4-6",
       "prompt": "You are an SDD sub-agent for the tasks phase. Read your skill file at ~/.config/opencode/skills/sdd-tasks/SKILL.md and follow its instructions. It includes a Step 1 for loading the skill registry — do NOT skip it.",
       "tools": {
         "bash": true,
@@ -120,6 +129,7 @@
       "description": "Validate implementation against specs",
       "hidden": true,
       "mode": "subagent",
+      "model": "anthropic/claude-opus-4-6",
       "prompt": "You are an SDD sub-agent for the verify phase. Read your skill file at ~/.config/opencode/skills/sdd-verify/SKILL.md and follow its instructions. It includes a Step 1 for loading the skill registry — do NOT skip it.",
       "tools": {
         "bash": true,
