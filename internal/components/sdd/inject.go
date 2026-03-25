@@ -61,18 +61,38 @@ var projectMarkers = []string{
 	"build.gradle",
 }
 
-// isProjectRoot reports whether dir looks like a valid project root by
-// checking for the presence of at least one known project marker.
-func isProjectRoot(dir string) bool {
+// maxAncestorDepth is the maximum number of parent directories findProjectRoot
+// will traverse before giving up. This prevents infinite loops on deeply-nested
+// trees and ensures we stop well before reaching the filesystem root.
+const maxAncestorDepth = 10
+
+// findProjectRoot walks upward from dir, checking each level for a known
+// project marker (.git, go.mod, package.json, …). It returns the first
+// matching directory and true. If no root is found within maxAncestorDepth
+// levels, or dir is empty, it returns ("", false).
+//
+// Walking upward means users can run gentle-ai from any subdirectory of their
+// project (e.g. repo/internal/foo) and still get workflow files written to
+// the correct workspace root.
+func findProjectRoot(dir string) (string, bool) {
 	if dir == "" {
-		return false
+		return "", false
 	}
-	for _, marker := range projectMarkers {
-		if _, err := os.Stat(filepath.Join(dir, marker)); err == nil {
-			return true
+	current := filepath.Clean(dir)
+	for i := 0; i < maxAncestorDepth; i++ {
+		for _, marker := range projectMarkers {
+			if _, err := os.Stat(filepath.Join(current, marker)); err == nil {
+				return current, true
+			}
 		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			// Reached filesystem root ("/" on Unix, "C:\" on Windows).
+			return "", false
+		}
+		current = parent
 	}
-	return false
+	return "", false
 }
 
 var (
@@ -283,32 +303,35 @@ func Inject(homeDir string, adapter agents.Adapter, sddMode model.SDDModeID, opt
 
 	// 3b. Write native workflow files (Windsurf Hybrid-First, and any future
 	// agent that implements the workflowInjector optional interface).
-	// Guard: skip if WorkspaceDir is not set or doesn't look like a project
-	// root (missing .git, go.mod, package.json, etc.) to avoid injecting into
-	// the user's home directory when gentle-ai is run from ~.
-	if wi, ok := adapter.(workflowInjector); ok && wi.SupportsWorkflows() && isProjectRoot(opts.WorkspaceDir) {
-		workflowsDir := wi.WorkflowsDir(opts.WorkspaceDir)
-		embedDir := wi.EmbeddedWorkflowsDir()
-		entries, readErr := fs.ReadDir(assets.FS, embedDir)
-		if readErr != nil {
-			return InjectionResult{}, fmt.Errorf("read embedded %s: %w", embedDir, readErr)
-		}
-
-		for _, entry := range entries {
-			if entry.IsDir() {
-				continue
-			}
-			content, readErr := assets.Read(embedDir + "/" + entry.Name())
+	// findProjectRoot walks upward from WorkspaceDir so gentle-ai can be
+	// invoked from any subdirectory (e.g. repo/internal/foo) and still inject
+	// workflows at the real project root. Skips silently if no root is found
+	// (e.g. running from home dir without a project).
+	if wi, ok := adapter.(workflowInjector); ok && wi.SupportsWorkflows() {
+		if projectRoot, found := findProjectRoot(opts.WorkspaceDir); found {
+			workflowsDir := wi.WorkflowsDir(projectRoot)
+			embedDir := wi.EmbeddedWorkflowsDir()
+			entries, readErr := fs.ReadDir(assets.FS, embedDir)
 			if readErr != nil {
-				return InjectionResult{}, fmt.Errorf("read embedded workflow %q: %w", entry.Name(), readErr)
+				return InjectionResult{}, fmt.Errorf("read embedded %s: %w", embedDir, readErr)
 			}
-			path := filepath.Join(workflowsDir, entry.Name())
-			writeResult, err := filemerge.WriteFileAtomic(path, []byte(content), 0o644)
-			if err != nil {
-				return InjectionResult{}, fmt.Errorf("write workflow %q: %w", path, err)
+
+			for _, entry := range entries {
+				if entry.IsDir() {
+					continue
+				}
+				content, readErr := assets.Read(embedDir + "/" + entry.Name())
+				if readErr != nil {
+					return InjectionResult{}, fmt.Errorf("read embedded workflow %q: %w", entry.Name(), readErr)
+				}
+				path := filepath.Join(workflowsDir, entry.Name())
+				writeResult, err := filemerge.WriteFileAtomic(path, []byte(content), 0o644)
+				if err != nil {
+					return InjectionResult{}, fmt.Errorf("write workflow %q: %w", path, err)
+				}
+				changed = changed || writeResult.Changed
+				files = append(files, path)
 			}
-			changed = changed || writeResult.Changed
-			files = append(files, path)
 		}
 	}
 

@@ -1880,6 +1880,46 @@ func TestInjectWindsurf_WorkflowContentMatchesAsset(t *testing.T) {
 	}
 }
 
+func TestInjectWindsurf_WorkflowsFoundFromSubdirectory(t *testing.T) {
+	home := t.TempDir()
+
+	// Simulate a real project: go.mod lives at the root.
+	projectRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(projectRoot, "go.mod"), []byte("module test\n"), 0o644); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+
+	// Simulate running gentle-ai from a subdirectory inside that project.
+	subDir := filepath.Join(projectRoot, "internal", "foo")
+	if err := os.MkdirAll(subDir, 0o755); err != nil {
+		t.Fatalf("mkdir subDir: %v", err)
+	}
+
+	mockNoPackageManager(t)
+
+	// Pass the subdirectory as WorkspaceDir — findProjectRoot must traverse
+	// upward and find go.mod at projectRoot.
+	result, err := Inject(home, windsurfAdapter(), "", InjectOptions{WorkspaceDir: subDir})
+	if err != nil {
+		t.Fatalf("Inject(windsurf) from subDir error = %v", err)
+	}
+	if !result.Changed {
+		t.Fatal("Inject(windsurf) from subDir: changed = false, expected workflow to be written")
+	}
+
+	// Workflow must be at the PROJECT ROOT, not inside the subdirectory.
+	expectedPath := filepath.Join(projectRoot, ".windsurf", "workflows", "sdd-new.md")
+	if _, err := os.Stat(expectedPath); err != nil {
+		t.Fatalf("workflow not found at project root %q: %v", expectedPath, err)
+	}
+
+	// Must NOT be written inside the subdirectory.
+	unexpectedPath := filepath.Join(subDir, ".windsurf", "workflows", "sdd-new.md")
+	if _, err := os.Stat(unexpectedPath); err == nil {
+		t.Fatalf("workflow was incorrectly written inside subdirectory %q", unexpectedPath)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Agent-specific SDD orchestrator asset selection tests
 // ---------------------------------------------------------------------------
