@@ -37,7 +37,42 @@ type InjectOptions struct {
 // adapters to implement no-op stubs.
 type workflowInjector interface {
 	SupportsWorkflows() bool
+	// WorkflowsDir returns the target filesystem directory where workflow files
+	// should be written (e.g. <workspaceDir>/.windsurf/workflows/).
 	WorkflowsDir(workspaceDir string) string
+	// EmbeddedWorkflowsDir returns the path inside the embedded assets FS where
+	// this adapter's workflow sources live (e.g. "windsurf/workflows").
+	// This removes the hardcoded agent name from the injection step, making
+	// the workflowInjector pattern reusable for future agents.
+	EmbeddedWorkflowsDir() string
+}
+
+// projectMarkers are filenames/dirs whose presence signals a valid project root.
+// We verify at least one exists before writing workspace-scoped files (like
+// native Windsurf workflows) to prevent accidentally polluting the user's
+// home directory when gentle-ai is invoked from ~.
+var projectMarkers = []string{
+	".git",
+	"go.mod",
+	"package.json",
+	"Cargo.toml",
+	"pyproject.toml",
+	"pom.xml",
+	"build.gradle",
+}
+
+// isProjectRoot reports whether dir looks like a valid project root by
+// checking for the presence of at least one known project marker.
+func isProjectRoot(dir string) bool {
+	if dir == "" {
+		return false
+	}
+	for _, marker := range projectMarkers {
+		if _, err := os.Stat(filepath.Join(dir, marker)); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 var (
@@ -248,9 +283,12 @@ func Inject(homeDir string, adapter agents.Adapter, sddMode model.SDDModeID, opt
 
 	// 3b. Write native workflow files (Windsurf Hybrid-First, and any future
 	// agent that implements the workflowInjector optional interface).
-	if wi, ok := adapter.(workflowInjector); ok && wi.SupportsWorkflows() && opts.WorkspaceDir != "" {
+	// Guard: skip if WorkspaceDir is not set or doesn't look like a project
+	// root (missing .git, go.mod, package.json, etc.) to avoid injecting into
+	// the user's home directory when gentle-ai is run from ~.
+	if wi, ok := adapter.(workflowInjector); ok && wi.SupportsWorkflows() && isProjectRoot(opts.WorkspaceDir) {
 		workflowsDir := wi.WorkflowsDir(opts.WorkspaceDir)
-		embedDir := "windsurf/workflows"
+		embedDir := wi.EmbeddedWorkflowsDir()
 		entries, readErr := fs.ReadDir(assets.FS, embedDir)
 		if readErr != nil {
 			return InjectionResult{}, fmt.Errorf("read embedded %s: %w", embedDir, readErr)

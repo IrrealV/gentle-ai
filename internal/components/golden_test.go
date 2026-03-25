@@ -298,6 +298,9 @@ func TestGoldenSDD_Codex(t *testing.T) {
 func TestGoldenSDD_Windsurf(t *testing.T) {
 	home := t.TempDir()
 	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "go.mod"), []byte("module test\n"), 0o644); err != nil {
+		t.Fatalf("write go.mod marker: %v", err)
+	}
 
 	result, err := sdd.Inject(home, windsurfAdapter(), "", sdd.InjectOptions{WorkspaceDir: workspace})
 	if err != nil {
@@ -589,6 +592,9 @@ func TestGoldenCombined_Claude(t *testing.T) {
 func TestGoldenCombined_Windsurf(t *testing.T) {
 	home := t.TempDir()
 	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "go.mod"), []byte("module test\n"), 0o644); err != nil {
+		t.Fatalf("write go.mod marker: %v", err)
+	}
 
 	// Windsurf: persona appends to global_rules.md; SDD appends SDD orchestrator
 	// to the same file and copies skills + workflow to workspace.

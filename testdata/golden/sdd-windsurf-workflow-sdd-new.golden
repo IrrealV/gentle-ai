@@ -59,7 +59,7 @@ Antes de redactar cualquier artefacto SDD, **DEBES recuperar contexto arquitect�
 
 Orden de preferencia:
 
-1. Usar **Engram** mediante búsqueda de memoria del proyecto (por ejemplo `engram_search` o el mecanismo equivalente disponible en el entorno)
+1. Usar **Engram** mediante las herramientas MCP canónicas: `mem_search` para buscar decisiones previas y `mem_context` para recuperar el contexto reciente del proyecto
 2. Si Engram no está disponible o no devuelve contexto suficiente, leer `AGENTS.md`
 3. Si existe contexto adicional del proyecto relacionado con SDD o arquitectura, incorporarlo también
 

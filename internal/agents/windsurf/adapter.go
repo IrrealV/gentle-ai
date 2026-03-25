@@ -38,7 +38,7 @@ func NewAdapter() *Adapter {
 
 // --- Identity ---
 
-func (a *Adapter) Agent() model.AgentID { return model.AgentWindsurf }
+func (a *Adapter) Agent() model.AgentID    { return model.AgentWindsurf }
 func (a *Adapter) Tier() model.SupportTier { return model.TierFull }
 
 // --- Detection ---
@@ -137,13 +137,13 @@ func (a *Adapter) MCPConfigPath(homeDir string, _ string) string {
 
 // --- Optional capabilities ---
 
-func (a *Adapter) SupportsOutputStyles() bool  { return false }
+func (a *Adapter) SupportsOutputStyles() bool     { return false }
 func (a *Adapter) OutputStyleDir(_ string) string { return "" }
-func (a *Adapter) SupportsSlashCommands() bool  { return false }
-func (a *Adapter) CommandsDir(_ string) string  { return "" }
-func (a *Adapter) SupportsSkills() bool         { return true }
-func (a *Adapter) SupportsSystemPrompt() bool   { return true }
-func (a *Adapter) SupportsMCP() bool            { return true }
+func (a *Adapter) SupportsSlashCommands() bool    { return false }
+func (a *Adapter) CommandsDir(_ string) string    { return "" }
+func (a *Adapter) SupportsSkills() bool           { return true }
+func (a *Adapter) SupportsSystemPrompt() bool     { return true }
+func (a *Adapter) SupportsMCP() bool              { return true }
 
 // SupportsWorkflows reports that Windsurf can consume native workflow files
 // placed in .windsurf/workflows/ inside the active workspace.
@@ -154,6 +154,11 @@ func (a *Adapter) SupportsWorkflows() bool { return true }
 func (a *Adapter) WorkflowsDir(workspaceDir string) string {
 	return filepath.Join(workspaceDir, ".windsurf", "workflows")
 }
+
+// EmbeddedWorkflowsDir returns the embedded asset path for Windsurf workflows.
+// Implements the workflowInjector interface so sdd.Inject does not need to
+// hardcode the agent name when reading from the embedded FS.
+func (a *Adapter) EmbeddedWorkflowsDir() string { return "windsurf/workflows" }
 
 // AgentNotInstallableError is returned when InstallCommand is called on a desktop-only agent.
 type AgentNotInstallableError struct {

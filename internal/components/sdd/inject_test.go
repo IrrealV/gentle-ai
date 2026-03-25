@@ -1763,6 +1763,9 @@ func TestInjectModelAssignmentsFunction(t *testing.T) {
 func TestInjectWindsurf_WorkflowsCopiedToWorkspace(t *testing.T) {
 	home := t.TempDir()
 	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "go.mod"), []byte("module test\n"), 0o644); err != nil {
+		t.Fatalf("write go.mod marker: %v", err)
+	}
 
 	mockNoPackageManager(t)
 
@@ -1796,6 +1799,9 @@ func TestInjectWindsurf_WorkflowsCopiedToWorkspace(t *testing.T) {
 func TestInjectWindsurf_WorkflowsIdempotent(t *testing.T) {
 	home := t.TempDir()
 	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "go.mod"), []byte("module test\n"), 0o644); err != nil {
+		t.Fatalf("write go.mod marker: %v", err)
+	}
 
 	mockNoPackageManager(t)
 
@@ -1832,9 +1838,30 @@ func TestInjectWindsurf_WorkflowsSkippedWithoutWorkspaceDir(t *testing.T) {
 	}
 }
 
+func TestInjectWindsurf_WorkflowsSkippedForNonProjectDir(t *testing.T) {
+	home := t.TempDir()
+	workspace := t.TempDir() // empty dir — no .git, go.mod, package.json, etc.
+
+	mockNoPackageManager(t)
+
+	result, err := Inject(home, windsurfAdapter(), "", InjectOptions{WorkspaceDir: workspace})
+	if err != nil {
+		t.Fatalf("Inject(windsurf) error = %v", err)
+	}
+
+	for _, f := range result.Files {
+		if strings.Contains(f, ".windsurf") {
+			t.Fatalf("workflow file %q should not be injected into non-project dir", f)
+		}
+	}
+}
+
 func TestInjectWindsurf_WorkflowContentMatchesAsset(t *testing.T) {
 	home := t.TempDir()
 	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "go.mod"), []byte("module test\n"), 0o644); err != nil {
+		t.Fatalf("write go.mod marker: %v", err)
+	}
 
 	mockNoPackageManager(t)
 

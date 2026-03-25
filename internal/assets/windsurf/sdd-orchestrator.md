@@ -26,7 +26,7 @@ This is the **SDD Decision Template**. Use it to classify EVERY user request.
 **Workflow**:
 ```
 1. Use Code Mode directly
-2. Optionally use `update_plan` to track 2-3 steps if needed
+2. Optionally use Windsurf's built-in Plan Mode to track 2-3 steps if needed
 3. Execute → Test → Done
 ```
 
@@ -105,7 +105,7 @@ This is the **SDD Decision Template**. Use it to classify EVERY user request.
    
 5. Execute in Code Mode:
    - Follow tasks.md checklist
-   - Update `update_plan` to track progress
+   - Keep your Plan Mode todo list updated as you complete steps
    - Test after each major milestone
    - Commit incrementally
    
@@ -206,12 +206,12 @@ Save to Memories:
 
 ### Plan Mode
 
-Use Cascade's built-in `update_plan` tool to:
-- Track 3-7 high-level steps
-- Mark steps as `in_progress` or `completed`
-- Keep user informed of progress
+Use Windsurf's native **Plan Mode** to:
+- Draft and track 3-7 high-level steps before executing
+- Mark steps as complete as you progress
+- Keep the user informed of progress at each checkpoint
 
-**DO NOT abuse it**. For small changes, skip the plan. For medium changes, 3-5 steps max. For large changes, mirror tasks.md.
+**DO NOT abuse it**. For small changes, skip Plan Mode entirely. For medium changes, 3-5 steps max. For large changes, mirror tasks.md in your plan.
 
 ### Terminal
 
