@@ -282,7 +282,7 @@ install_binary() {
     # Create temp directory — clean up on exit
     local tmpdir
     tmpdir="$(mktemp -d)"
-    trap 'rm -rf "$tmpdir"' EXIT
+    trap '[ -n "${tmpdir:-}" ] && rm -rf "$tmpdir"' EXIT
 
     # Download archive
     info "Downloading ${archive_name}..."
