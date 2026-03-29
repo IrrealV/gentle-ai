@@ -66,6 +66,26 @@ func TestRemoveManagedPersonaPreamble_PreservesManagedSuffix(t *testing.T) {
 	}
 }
 
+func TestRemoveManagedPersonaPreamble_WithoutMarkerDoesNotDeleteContent(t *testing.T) {
+	input := strings.Join([]string{
+		"---",
+		"name: Gentle AI Persona",
+		"description: Teaching-oriented persona with SDD orchestration and Engram protocol",
+		"---",
+		"",
+		"## Personality",
+		"Senior Architect mentor persona.",
+	}, "\n")
+
+	updated, changed := removeManagedPersonaPreamble(input)
+	if changed {
+		t.Fatal("removeManagedPersonaPreamble() changed = true, want false without explicit marker")
+	}
+	if updated != input {
+		t.Fatalf("content was modified without explicit marker:\n%s", updated)
+	}
+}
+
 func TestRemoveJSONPaths_RemovesOnlyManagedKeys(t *testing.T) {
 	input := []byte(`{
   "theme": "gentleman-kanagawa",
@@ -157,6 +177,67 @@ func TestRemoveJSONPaths_SupportsCommentsAndTrailingCommas(t *testing.T) {
 	}
 	if _, exists := mcpServers["custom"]; !exists {
 		t.Fatalf("custom server should remain: %#v", mcpServers)
+	}
+}
+
+func TestUnmarshalJSONObject_PreservesLargeIntegersAsJSONNumber(t *testing.T) {
+	root, err := unmarshalJSONObject([]byte(`{"big":9223372036854775807}`))
+	if err != nil {
+		t.Fatalf("unmarshalJSONObject() error = %v", err)
+	}
+
+	number, ok := root["big"].(json.Number)
+	if !ok {
+		t.Fatalf("big value type = %T, want json.Number", root["big"])
+	}
+	if string(number) != "9223372036854775807" {
+		t.Fatalf("json.Number = %q, want exact integer", number)
+	}
+}
+
+func TestRemoveJSONPaths_PreservesCRLF(t *testing.T) {
+	input := []byte("{\r\n  \"outputStyle\": \"Gentleman\",\r\n  \"userSetting\": true\r\n}\r\n")
+
+	updated, changed, err := removeJSONPaths(input, jsonPath{"outputStyle"})
+	if err != nil {
+		t.Fatalf("removeJSONPaths() error = %v", err)
+	}
+	if !changed {
+		t.Fatal("removeJSONPaths() changed = false, want true")
+	}
+	if !strings.Contains(string(updated), "\r\n") {
+		t.Fatalf("expected CRLF to be preserved, got: %q", string(updated))
+	}
+}
+
+func TestReadManagedFile_RejectsSymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.json")
+	if err := os.WriteFile(target, []byte(`{"ok":true}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(target) error = %v", err)
+	}
+	link := filepath.Join(dir, "link.json")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("Symlink() error = %v", err)
+	}
+
+	_, err := readManagedFile(link)
+	if err == nil || !strings.Contains(err.Error(), "refusing to read symlink") {
+		t.Fatalf("readManagedFile(symlink) error = %v, want symlink rejection", err)
+	}
+}
+
+func TestReadManagedFile_RejectsOversizedFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.md")
+	data := make([]byte, maxManagedFileSize+1)
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatalf("WriteFile(huge) error = %v", err)
+	}
+
+	_, err := readManagedFile(path)
+	if err == nil || !strings.Contains(err.Error(), "exceeds max managed size") {
+		t.Fatalf("readManagedFile(huge) error = %v, want max-size rejection", err)
 	}
 }
 

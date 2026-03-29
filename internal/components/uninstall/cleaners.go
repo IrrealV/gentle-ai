@@ -4,12 +4,16 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 	"strings"
 
 	"github.com/gentleman-programming/gentle-ai/internal/components/filemerge"
 )
 
 type jsonPath []string
+
+const maxManagedFileSize = 16 << 20
 
 var managedPersonaFingerprints = []string{
 	"## Personality",
@@ -46,7 +50,7 @@ func removeManagedPersonaPreamble(content string) (string, bool) {
 	}
 
 	if markerIdx < 0 {
-		return "", true
+		return content, false
 	}
 
 	suffix = strings.TrimLeft(suffix, "\n")
@@ -88,7 +92,9 @@ func removeJSONPaths(raw []byte, paths ...jsonPath) ([]byte, bool, error) {
 		return nil, false, fmt.Errorf("marshal json after cleanup: %w", err)
 	}
 
-	return append(encoded, '\n'), true, nil
+	eol := detectEOL(string(raw))
+	encoded = bytes.ReplaceAll(encoded, []byte("\n"), []byte(eol))
+	return append(encoded, []byte(eol)...), true, nil
 }
 
 func deleteJSONPath(root map[string]any, path jsonPath) bool {
@@ -128,6 +134,7 @@ func jsonIsEmptyObject(raw []byte) bool {
 }
 
 func cleanCodexTOML(content string) (string, bool) {
+	eol := detectEOL(content)
 	normalized := strings.ReplaceAll(content, "\r\n", "\n")
 	updated := removeTOMLTable(normalized, "mcp_servers.engram")
 	updated = removeTopLevelTOMLKeys(updated, "model_instructions_file", "experimental_compact_prompt_file")
@@ -135,7 +142,8 @@ func cleanCodexTOML(content string) (string, bool) {
 	if updated != "" {
 		updated += "\n"
 	}
-	return updated, updated != normalized
+	updated = restoreEOL(updated, eol)
+	return updated, updated != content
 }
 
 func removeTOMLTable(content, tableName string) string {
@@ -197,16 +205,67 @@ func unmarshalJSONObject(raw []byte) (map[string]any, error) {
 		return object, nil
 	}
 
-	if err := json.Unmarshal(raw, &object); err == nil {
+	if err := decodeJSONObject(raw, &object); err == nil {
 		return object, nil
 	}
 
 	normalized := normalizeJSON(raw)
-	if err := json.Unmarshal(normalized, &object); err != nil {
+	if err := decodeJSONObject(normalized, &object); err != nil {
 		return nil, fmt.Errorf("unmarshal json object: %w", err)
 	}
 
 	return object, nil
+}
+
+func decodeJSONObject(raw []byte, target *map[string]any) error {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	return dec.Decode(target)
+}
+
+func detectEOL(content string) string {
+	if strings.Contains(content, "\r\n") {
+		return "\r\n"
+	}
+	return "\n"
+}
+
+func restoreEOL(content, eol string) string {
+	if eol == "\n" {
+		return content
+	}
+	return strings.ReplaceAll(content, "\n", eol)
+}
+
+func readManagedFile(path string) ([]byte, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("stat file %q: %w", path, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("refusing to read symlink %q", path)
+	}
+	if info.Size() > maxManagedFileSize {
+		return nil, fmt.Errorf("file %q exceeds max managed size %d bytes", path, maxManagedFileSize)
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open file %q: %w", path, err)
+	}
+	defer file.Close()
+
+	data, err := io.ReadAll(io.LimitReader(file, maxManagedFileSize+1))
+	if err != nil {
+		return nil, fmt.Errorf("read file %q: %w", path, err)
+	}
+	if len(data) > maxManagedFileSize {
+		return nil, fmt.Errorf("file %q exceeds max managed size %d bytes", path, maxManagedFileSize)
+	}
+	return data, nil
 }
 
 func normalizeJSON(raw []byte) []byte {

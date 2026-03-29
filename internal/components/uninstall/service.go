@@ -205,7 +205,11 @@ func (s *Service) buildPlan(agentIDs []model.AgentID, componentIDs []model.Compo
 				return plan{}, fmt.Errorf("plan uninstall for %q/%q: %w", agentID, componentID, err)
 			}
 			for _, target := range targets {
-				for _, file := range expandBackupTarget(target) {
+				files, err := expandBackupTarget(target)
+				if err != nil {
+					return plan{}, fmt.Errorf("expand backup target %q: %w", target, err)
+				}
+				for _, file := range files {
 					backupTargets[file] = struct{}{}
 				}
 			}
@@ -216,7 +220,11 @@ func (s *Service) buildPlan(agentIDs []model.AgentID, componentIDs []model.Compo
 	}
 
 	for _, target := range globalBackupTargets(s.homeDir) {
-		for _, file := range expandBackupTarget(target) {
+		files, err := expandBackupTarget(target)
+		if err != nil {
+			return plan{}, fmt.Errorf("expand backup target %q: %w", target, err)
+		}
+		for _, file := range files {
 			backupTargets[file] = struct{}{}
 		}
 	}
@@ -561,10 +569,12 @@ func rewriteMarkdownFile(path string, mutate func(content string) (string, bool)
 			if err != nil {
 				return false, false, err
 			}
+			eol := detectEOL(content)
 			updated, changed := mutate(content)
 			if !changed {
 				return false, false, nil
 			}
+			updated = restoreEOL(updated, eol)
 			if strings.TrimSpace(updated) == "" {
 				if err := removeFileIfExists(path); err != nil {
 					return false, false, err
@@ -585,7 +595,7 @@ func rewriteJSONFile(path string, jsonPaths ...jsonPath) operation {
 		typeID: opRewriteFile,
 		path:   path,
 		apply: func(path string) (bool, bool, error) {
-			raw, err := os.ReadFile(path)
+			raw, err := readManagedFile(path)
 			if err != nil {
 				if os.IsNotExist(err) {
 					return false, false, nil
@@ -623,10 +633,12 @@ func rewriteTOMLFile(path string, mutate func(content string) (string, bool)) op
 			if err != nil {
 				return false, false, err
 			}
+			eol := detectEOL(content)
 			updated, changed := mutate(content)
 			if !changed {
 				return false, false, nil
 			}
+			updated = restoreEOL(updated, eol)
 			if strings.TrimSpace(updated) == "" {
 				if err := removeFileIfExists(path); err != nil {
 					return false, false, err
@@ -716,7 +728,7 @@ func removeDirIfEmptyRecursive(path string) (bool, error) {
 }
 
 func readFileOrEmpty(path string) (string, error) {
-	data, err := os.ReadFile(path)
+	data, err := readManagedFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", nil
@@ -734,25 +746,25 @@ func removeFileIfExists(path string) error {
 	return nil
 }
 
-func expandBackupTarget(path string) []string {
+func expandBackupTarget(path string) ([]string, error) {
 	if path == "" {
-		return nil
+		return nil, nil
 	}
 	info, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return []string{path}
+			return []string{path}, nil
 		}
-		return []string{path}
+		return nil, err
 	}
 	if !info.IsDir() {
-		return []string{path}
+		return []string{path}, nil
 	}
 
 	files := make([]string, 0)
-	_ = filepath.WalkDir(path, func(current string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(path, func(current string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return nil
+			return err
 		}
 		if d.IsDir() {
 			return nil
@@ -760,10 +772,13 @@ func expandBackupTarget(path string) []string {
 		files = append(files, current)
 		return nil
 	})
-	if len(files) == 0 {
-		return []string{path}
+	if err != nil {
+		return nil, err
 	}
-	return files
+	if len(files) == 0 {
+		return []string{path}, nil
+	}
+	return files, nil
 }
 
 func operationKey(op operation) string {
