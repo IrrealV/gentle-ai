@@ -1,10 +1,13 @@
 package skills
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"path/filepath"
+	"reflect"
 	"strings"
+	"text/template"
 
 	"github.com/gentleman-programming/gentle-ai/internal/agents"
 	"github.com/gentleman-programming/gentle-ai/internal/assets"
@@ -19,10 +22,33 @@ func isSDDSkill(id model.SkillID) bool {
 	return strings.HasPrefix(string(id), "sdd-")
 }
 
+// validateSkillID prevents path traversal attacks by ensuring the ID is safe.
+func validateSkillID(id model.SkillID) error {
+	strID := string(id)
+	if strID == "" {
+		return fmt.Errorf("skill ID cannot be empty")
+	}
+	if strings.Contains(strID, "/") || strings.Contains(strID, "\\") {
+		return fmt.Errorf("skill ID contains invalid characters (slashes)")
+	}
+	if strID == "." || strID == ".." {
+		return fmt.Errorf("skill ID cannot be '.' or '..'")
+	}
+	if strID != filepath.Clean(strID) {
+		return fmt.Errorf("skill ID is not clean")
+	}
+	return nil
+}
+
 type InjectionResult struct {
 	Changed bool
 	Files   []string
 	Skipped []model.SkillID
+}
+
+// SkillTemplateData provides context to the skill Markdown templates.
+type SkillTemplateData struct {
+	DelegationModel model.DelegationModel
 }
 
 // Inject writes the embedded SKILL.md files for each requested skill
@@ -37,7 +63,24 @@ type InjectionResult struct {
 //
 // Individual skill failures (e.g., missing embedded asset) are logged
 // and skipped rather than aborting the entire operation.
+
+func isNilAdapter(adapter agents.Adapter) bool {
+	if adapter == nil {
+		return true
+	}
+	v := reflect.ValueOf(adapter)
+	switch v.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Map, reflect.Ptr, reflect.UnsafePointer, reflect.Interface, reflect.Slice:
+		return v.IsNil()
+	}
+	return false
+}
+
 func Inject(homeDir string, adapter agents.Adapter, skillIDs []model.SkillID) (InjectionResult, error) {
+	if isNilAdapter(adapter) {
+		return InjectionResult{}, fmt.Errorf("adapter is nil")
+	}
+
 	if !adapter.SupportsSkills() {
 		return InjectionResult{Skipped: skillIDs}, nil
 	}
@@ -51,9 +94,19 @@ func Inject(homeDir string, adapter agents.Adapter, skillIDs []model.SkillID) (I
 	skipped := make([]model.SkillID, 0)
 	changed := false
 
+	templateData := SkillTemplateData{
+		DelegationModel: adapter.DelegationModel(),
+	}
+
 	for _, id := range skillIDs {
 		// SDD skills are written by the SDD component — skip to avoid conflicts.
 		if isSDDSkill(id) {
+			continue
+		}
+
+		if err := validateSkillID(id); err != nil {
+			log.Printf("skills: skipping %q — invalid ID: %v", id, err)
+			skipped = append(skipped, id)
 			continue
 		}
 
@@ -68,8 +121,22 @@ func Inject(homeDir string, adapter agents.Adapter, skillIDs []model.SkillID) (I
 			return InjectionResult{}, fmt.Errorf("skill %q: embedded asset exists but is empty — build may be corrupt", id)
 		}
 
+		tmpl, err := template.New(string(id)).Delims("[[", "]]").Parse(string(content))
+		if err != nil {
+			log.Printf("skills: skipping %q — failed to parse template: %v", id, err)
+			skipped = append(skipped, id)
+			continue
+		}
+
+		var buf bytes.Buffer
+		if err := tmpl.Execute(&buf, templateData); err != nil {
+			log.Printf("skills: skipping %q — failed to render template: %v", id, err)
+			skipped = append(skipped, id)
+			continue
+		}
+
 		path := filepath.Join(skillDir, string(id), "SKILL.md")
-		writeResult, writeErr := filemerge.WriteFileAtomic(path, []byte(content), 0o644)
+		writeResult, writeErr := filemerge.WriteFileAtomic(path, buf.Bytes(), 0o644)
 		if writeErr != nil {
 			return InjectionResult{}, fmt.Errorf("skill %q: write failed: %w", id, writeErr)
 		}
@@ -83,6 +150,12 @@ func Inject(homeDir string, adapter agents.Adapter, skillIDs []model.SkillID) (I
 
 // SkillPathForAgent returns the filesystem path where a skill file would be written.
 func SkillPathForAgent(homeDir string, adapter agents.Adapter, id model.SkillID) string {
+	if isNilAdapter(adapter) {
+		return ""
+	}
+	if err := validateSkillID(id); err != nil {
+		return ""
+	}
 	skillDir := adapter.SkillsDir(homeDir)
 	if skillDir == "" {
 		return ""

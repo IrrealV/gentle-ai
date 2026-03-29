@@ -108,3 +108,10 @@ const (
 	SDDModeSingle SDDModeID = "single"
 	SDDModeMulti  SDDModeID = "multi"
 )
+
+type DelegationModel string
+
+const (
+	ModelSingleAgent DelegationModel = "single-agent"
+	ModelMultiAgent  DelegationModel = "multi-agent"
+)

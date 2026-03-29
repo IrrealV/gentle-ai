@@ -16,6 +16,7 @@ type mockAdapter struct {
 
 func (m mockAdapter) Agent() model.AgentID      { return m.agent }
 func (m mockAdapter) Tier() model.SupportTier   { return model.TierFull }
+func (m mockAdapter) DelegationModel() model.DelegationModel { return model.ModelSingleAgent }
 func (m mockAdapter) SupportsAutoInstall() bool { return true }
 func (m mockAdapter) Detect(_ context.Context, _ string) (bool, string, string, bool, error) {
 	return false, "", "", false, nil

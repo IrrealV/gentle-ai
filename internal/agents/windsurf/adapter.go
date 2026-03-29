@@ -40,6 +40,7 @@ func NewAdapter() *Adapter {
 
 func (a *Adapter) Agent() model.AgentID    { return model.AgentWindsurf }
 func (a *Adapter) Tier() model.SupportTier { return model.TierFull }
+func (a *Adapter) DelegationModel() model.DelegationModel { return model.ModelMultiAgent }
 
 // --- Detection ---
 

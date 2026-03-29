@@ -18,6 +18,15 @@ func WriteFileAtomic(path string, content []byte, perm fs.FileMode) (WriteResult
 		perm = 0o644
 	}
 
+	// Hardening: Prevent symlink overwrite attacks
+	if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return WriteResult{}, fmt.Errorf("security: target path %q is a symlink", path)
+	}
+	dir := filepath.Dir(path)
+	if info, err := os.Lstat(dir); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return WriteResult{}, fmt.Errorf("security: parent directory %q is a symlink", dir)
+	}
+
 	created := false
 	existing, err := os.ReadFile(path)
 	if err == nil {
@@ -30,7 +39,6 @@ func WriteFileAtomic(path string, content []byte, perm fs.FileMode) (WriteResult
 		created = true
 	}
 
-	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return WriteResult{}, fmt.Errorf("create parent directories for %q: %w", path, err)
 	}

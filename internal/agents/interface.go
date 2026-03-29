@@ -21,6 +21,7 @@ type Adapter interface {
 	// Identity
 	Agent() model.AgentID
 	Tier() model.SupportTier
+	DelegationModel() model.DelegationModel
 
 	// Detection
 	Detect(ctx context.Context, homeDir string) (installed bool, binaryPath string, configPath string, configFound bool, err error)
