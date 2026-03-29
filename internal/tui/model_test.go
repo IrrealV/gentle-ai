@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gentleman-programming/gentle-ai/internal/backup"
+	componentuninstall "github.com/gentleman-programming/gentle-ai/internal/components/uninstall"
 	"github.com/gentleman-programming/gentle-ai/internal/model"
 	"github.com/gentleman-programming/gentle-ai/internal/pipeline"
 	"github.com/gentleman-programming/gentle-ai/internal/planner"
@@ -765,8 +766,8 @@ func TestWelcomeMenu_ConfigureModelsNavigation(t *testing.T) {
 	}
 }
 
-// TestWelcomeMenu_BackupsNavigation verifies cursor 5 (Manage backups) goes to ScreenBackups.
-func TestWelcomeMenu_BackupsNavigation(t *testing.T) {
+// TestWelcomeMenu_UninstallNavigation verifies cursor 5 (Uninstall configs) goes to ScreenUninstall.
+func TestWelcomeMenu_UninstallNavigation(t *testing.T) {
 	m := NewModel(system.DetectionResult{}, "dev")
 	m.Screen = ScreenWelcome
 	m.Cursor = 5
@@ -774,17 +775,118 @@ func TestWelcomeMenu_BackupsNavigation(t *testing.T) {
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	state := updated.(Model)
 
-	if state.Screen != ScreenBackups {
-		t.Fatalf("cursor=5 (Backups): screen = %v, want %v", state.Screen, ScreenBackups)
+	if state.Screen != ScreenUninstall {
+		t.Fatalf("cursor=5 (Uninstall): screen = %v, want %v", state.Screen, ScreenUninstall)
 	}
 }
 
-// TestWelcomeMenu_OptionCount verifies the welcome menu has exactly 7 items.
+// TestWelcomeMenu_BackupsNavigation verifies cursor 6 (Manage backups) goes to ScreenBackups.
+func TestWelcomeMenu_BackupsNavigation(t *testing.T) {
+	m := NewModel(system.DetectionResult{}, "dev")
+	m.Screen = ScreenWelcome
+	m.Cursor = 6
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	state := updated.(Model)
+
+	if state.Screen != ScreenBackups {
+		t.Fatalf("cursor=6 (Backups): screen = %v, want %v", state.Screen, ScreenBackups)
+	}
+}
+
+// TestWelcomeMenu_OptionCount verifies the welcome menu has exactly 8 items.
 func TestWelcomeMenu_OptionCount(t *testing.T) {
 	m := NewModel(system.DetectionResult{}, "dev")
 	opts := screens.WelcomeOptions(m.UpdateResults, m.UpdateCheckDone)
-	if len(opts) != 7 {
-		t.Fatalf("WelcomeOptions() len = %d, want 7; got %v", len(opts), opts)
+	if len(opts) != 8 {
+		t.Fatalf("WelcomeOptions() len = %d, want 8; got %v", len(opts), opts)
+	}
+}
+
+func TestUninstallScreen_ContinueNavigatesToComponents(t *testing.T) {
+	m := NewModel(system.DetectionResult{}, "dev")
+	m.Screen = ScreenUninstall
+	m.UninstallAgents = []model.AgentID{model.AgentOpenCode}
+	m.Cursor = len(screens.UninstallAgentOptions())
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	state := updated.(Model)
+
+	if state.Screen != ScreenUninstallComponents {
+		t.Fatalf("screen = %v, want %v", state.Screen, ScreenUninstallComponents)
+	}
+}
+
+func TestUninstallComponents_ContinueNavigatesToConfirm(t *testing.T) {
+	m := NewModel(system.DetectionResult{}, "dev")
+	m.Screen = ScreenUninstallComponents
+	m.UninstallComponents = []model.ComponentID{model.ComponentSDD}
+	m.Cursor = len(screens.UninstallComponentOptions())
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	state := updated.(Model)
+
+	if state.Screen != ScreenUninstallConfirm {
+		t.Fatalf("screen = %v, want %v", state.Screen, ScreenUninstallConfirm)
+	}
+}
+
+func TestUninstallConfirm_EnterExecutesAndNavigatesToResult(t *testing.T) {
+	m := NewModel(system.DetectionResult{}, "dev")
+	m.Screen = ScreenUninstallConfirm
+	m.UninstallAgents = []model.AgentID{model.AgentOpenCode}
+	m.UninstallComponents = []model.ComponentID{model.ComponentSDD, model.ComponentPersona}
+	m.Cursor = 0
+	m.UninstallFn = func(agentIDs []model.AgentID, componentIDs []model.ComponentID) (componentuninstall.Result, error) {
+		if len(agentIDs) != 1 || agentIDs[0] != model.AgentOpenCode {
+			t.Fatalf("agentIDs = %v, want [%s]", agentIDs, model.AgentOpenCode)
+		}
+		if len(componentIDs) != 2 || componentIDs[0] != model.ComponentSDD || componentIDs[1] != model.ComponentPersona {
+			t.Fatalf("componentIDs = %v, want [%s %s]", componentIDs, model.ComponentSDD, model.ComponentPersona)
+		}
+		return componentuninstall.Result{RemovedFiles: []string{"/tmp/file"}}, nil
+	}
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	state := updated.(Model)
+	if !state.OperationRunning {
+		t.Fatalf("OperationRunning = false, want true after starting uninstall")
+	}
+	if cmd == nil {
+		t.Fatal("expected uninstall command to be returned")
+	}
+
+	uninstallMsg := findUninstallDoneMsgInBatch(t, cmd)
+	if uninstallMsg == nil {
+		t.Fatal("expected UninstallDoneMsg from batch cmd, got nil")
+	}
+	updated, _ = state.Update(*uninstallMsg)
+	state = updated.(Model)
+
+	if state.Screen != ScreenUninstallResult {
+		t.Fatalf("screen = %v, want %v", state.Screen, ScreenUninstallResult)
+	}
+	if state.UninstallErr != nil {
+		t.Fatalf("unexpected UninstallErr: %v", state.UninstallErr)
+	}
+	if len(state.UninstallResult.RemovedFiles) != 1 {
+		t.Fatalf("RemovedFiles len = %d, want 1", len(state.UninstallResult.RemovedFiles))
+	}
+}
+
+func TestUninstallResult_EnterReturnsToWelcome(t *testing.T) {
+	m := NewModel(system.DetectionResult{}, "dev")
+	m.Screen = ScreenUninstallResult
+	m.UninstallErr = nil
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	state := updated.(Model)
+
+	if state.Screen != ScreenWelcome {
+		t.Fatalf("screen = %v, want %v", state.Screen, ScreenWelcome)
+	}
+	if state.UninstallErr != nil {
+		t.Fatalf("UninstallErr should be reset to nil: %v", state.UninstallErr)
 	}
 }
 
@@ -1371,6 +1473,32 @@ func findSyncDoneMsgInBatch(t *testing.T, cmd tea.Cmd) *SyncDoneMsg {
 			innerMsg := innerCmd()
 			if syncMsg, ok := innerMsg.(SyncDoneMsg); ok {
 				return &syncMsg
+			}
+		}
+	}
+
+	return nil
+}
+
+func findUninstallDoneMsgInBatch(t *testing.T, cmd tea.Cmd) *UninstallDoneMsg {
+	t.Helper()
+	if cmd == nil {
+		return nil
+	}
+
+	msg := cmd()
+	if uninstallMsg, ok := msg.(UninstallDoneMsg); ok {
+		return &uninstallMsg
+	}
+
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		for _, innerCmd := range batch {
+			if innerCmd == nil {
+				continue
+			}
+			innerMsg := innerCmd()
+			if uninstallMsg, ok := innerMsg.(UninstallDoneMsg); ok {
+				return &uninstallMsg
 			}
 		}
 	}

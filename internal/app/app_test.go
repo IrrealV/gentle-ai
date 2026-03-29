@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gentleman-programming/gentle-ai/internal/backup"
+	componentuninstall "github.com/gentleman-programming/gentle-ai/internal/components/uninstall"
 	"github.com/gentleman-programming/gentle-ai/internal/model"
 )
 
@@ -282,6 +283,52 @@ func TestTuiSyncStrictTDDNilOverrideNoChange(t *testing.T) {
 
 	if !selection.StrictTDD {
 		t.Fatalf("Selection.StrictTDD changed unexpectedly; nil override should not modify the field")
+	}
+}
+
+func TestTuiUninstallPassesAgentsAndComponents(t *testing.T) {
+	home := t.TempDir()
+	workspace := t.TempDir()
+
+	origRun := runUninstallWithSelection
+	defer func() {
+		runUninstallWithSelection = origRun
+	}()
+
+	called := false
+	runUninstallWithSelection = func(homeDir, workspaceDir string, agentIDs []model.AgentID, componentIDs []model.ComponentID) (componentuninstall.Result, error) {
+		called = true
+		if homeDir != home {
+			t.Fatalf("homeDir = %q, want %q", homeDir, home)
+		}
+		if workspaceDir != workspace {
+			t.Fatalf("workspaceDir = %q, want %q", workspaceDir, workspace)
+		}
+		if len(agentIDs) != 1 || agentIDs[0] != model.AgentOpenCode {
+			t.Fatalf("agentIDs = %v, want [%s]", agentIDs, model.AgentOpenCode)
+		}
+		if len(componentIDs) != 2 || componentIDs[0] != model.ComponentSDD || componentIDs[1] != model.ComponentPersona {
+			t.Fatalf("componentIDs = %v, want [%s %s]", componentIDs, model.ComponentSDD, model.ComponentPersona)
+		}
+		return componentuninstall.Result{}, nil
+	}
+
+	origWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if err := os.Chdir(workspace); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+	defer func() { _ = os.Chdir(origWD) }()
+
+	fn := tuiUninstall(home)
+	_, err = fn([]model.AgentID{model.AgentOpenCode}, []model.ComponentID{model.ComponentSDD, model.ComponentPersona})
+	if err != nil {
+		t.Fatalf("tuiUninstall returned error: %v", err)
+	}
+	if !called {
+		t.Fatal("expected runUninstallWithSelection to be called")
 	}
 }
 

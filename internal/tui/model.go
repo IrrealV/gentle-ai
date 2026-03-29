@@ -11,6 +11,7 @@ import (
 	"github.com/gentleman-programming/gentle-ai/internal/backup"
 	"github.com/gentleman-programming/gentle-ai/internal/catalog"
 	"github.com/gentleman-programming/gentle-ai/internal/components/sdd"
+	componentuninstall "github.com/gentleman-programming/gentle-ai/internal/components/uninstall"
 	"github.com/gentleman-programming/gentle-ai/internal/model"
 	"github.com/gentleman-programming/gentle-ai/internal/opencode"
 	"github.com/gentleman-programming/gentle-ai/internal/pipeline"
@@ -75,6 +76,12 @@ type SyncDoneMsg struct {
 	Err          error
 }
 
+// UninstallDoneMsg is sent when the uninstall operation completes.
+type UninstallDoneMsg struct {
+	Result componentuninstall.Result
+	Err    error
+}
+
 // UpgradePhaseCompletedMsg is sent by startUpgradeSync when the upgrade phase
 // finishes (before the sync phase begins). This enables the intermediate "sync
 // running" state to be displayed.
@@ -90,6 +97,9 @@ type UpgradeFunc func(ctx context.Context, results []update.UpdateResult) upgrad
 // When overrides is non-nil, the sync merges those model assignments into the
 // selection before executing. Returns the number of files changed and any error.
 type SyncFunc func(overrides *model.SyncOverrides) (int, error)
+
+// UninstallFunc is the signature of the function injected to perform managed uninstall.
+type UninstallFunc func(agentIDs []model.AgentID, componentIDs []model.ComponentID) (componentuninstall.Result, error)
 
 // ExecuteFunc builds and runs the installation pipeline. It receives a ProgressFunc
 // callback to emit step-level progress events, and returns the ExecutionResult.
@@ -141,6 +151,10 @@ const (
 	ScreenSync
 	ScreenUpgradeSync
 	ScreenModelConfig
+	ScreenUninstall
+	ScreenUninstallComponents
+	ScreenUninstallConfirm
+	ScreenUninstallResult
 )
 
 type Model struct {
@@ -254,6 +268,19 @@ type Model struct {
 
 	// UpgradeErr holds the error from the last upgrade run (nil on success).
 	UpgradeErr error
+
+	// UninstallAgents holds the current TUI selection for the uninstall flow.
+	UninstallAgents     []model.AgentID
+	UninstallComponents []model.ComponentID
+
+	// UninstallResult holds the last uninstall execution result.
+	UninstallResult componentuninstall.Result
+
+	// UninstallErr holds the error from the last uninstall execution.
+	UninstallErr error
+
+	// UninstallFn performs the managed uninstall operation.
+	UninstallFn UninstallFunc
 }
 
 func NewModel(detection system.DetectionResult, version string) Model {
@@ -265,10 +292,12 @@ func NewModel(detection system.DetectionResult, version string) Model {
 	}
 
 	return Model{
-		Screen:    ScreenWelcome,
-		Version:   version,
-		Selection: selection,
-		Detection: detection,
+		Screen:              ScreenWelcome,
+		Version:             version,
+		Selection:           selection,
+		Detection:           detection,
+		UninstallAgents:     preselectedAgents(detection),
+		UninstallComponents: defaultUninstallComponents(),
 		Progress: NewProgressState([]string{
 			"Install dependencies",
 			"Configure selected agents",
@@ -331,6 +360,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.SyncErr = msg.Err
 		m.HasSyncRun = true
 		m.PendingSyncOverrides = nil
+		return m, nil
+	case UninstallDoneMsg:
+		m.OperationRunning = false
+		m.UninstallResult = msg.Result
+		m.UninstallErr = msg.Err
+		m.setScreen(ScreenUninstallResult)
 		return m, nil
 	case UpgradePhaseCompletedMsg:
 		// Upgrade phase done; sync phase is about to start (OperationRunning stays true).
@@ -440,6 +475,14 @@ func (m Model) View() string {
 		return screens.RenderModelConfig(m.Cursor)
 	case ScreenUpgradeSync:
 		return screens.RenderUpgradeSync(m.UpdateResults, m.UpgradeReport, m.SyncFilesChanged, m.UpgradeErr, m.SyncErr, m.OperationRunning, m.UpdateCheckDone, m.Cursor, m.SpinnerFrame)
+	case ScreenUninstall:
+		return screens.RenderUninstall(m.UninstallAgents, m.Cursor)
+	case ScreenUninstallComponents:
+		return screens.RenderUninstallComponents(m.UninstallComponents, m.Cursor)
+	case ScreenUninstallConfirm:
+		return screens.RenderUninstallConfirm(m.UninstallAgents, m.UninstallComponents, m.Cursor, m.OperationRunning, m.SpinnerFrame)
+	case ScreenUninstallResult:
+		return screens.RenderUninstallResult(m.UninstallResult, m.UninstallErr)
 	case ScreenDetection:
 		return screens.RenderDetection(m.Detection, m.Cursor)
 	case ScreenAgents:
@@ -593,6 +636,10 @@ func (m Model) handleKeyPress(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch m.Screen {
 		case ScreenAgents:
 			m.toggleCurrentAgent()
+		case ScreenUninstall:
+			m.toggleCurrentUninstallAgent()
+		case ScreenUninstallComponents:
+			m.toggleCurrentUninstallComponent()
 		case ScreenDependencyTree:
 			if m.Selection.Preset == model.PresetCustom {
 				m.toggleCurrentComponent()
@@ -650,10 +697,50 @@ func (m Model) confirmSelection() (tea.Model, tea.Cmd) {
 		case 4:
 			m.setScreen(ScreenModelConfig)
 		case 5:
-			m.setScreen(ScreenBackups)
+			m = m.withResetUninstallState()
+			m.setScreen(ScreenUninstall)
 		case 6:
+			m.setScreen(ScreenBackups)
+		case 7:
 			return m, tea.Quit
 		}
+	case ScreenUninstall:
+		agentCount := len(screens.UninstallAgentOptions())
+		switch {
+		case m.Cursor < agentCount:
+			m.toggleCurrentUninstallAgent()
+		case m.Cursor == agentCount && len(m.UninstallAgents) > 0:
+			m.setScreen(ScreenUninstallComponents)
+		case m.Cursor == agentCount+1:
+			m.setScreen(ScreenWelcome)
+		}
+		return m, nil
+	case ScreenUninstallComponents:
+		componentCount := len(screens.UninstallComponentOptions())
+		switch {
+		case m.Cursor < componentCount:
+			m.toggleCurrentUninstallComponent()
+		case m.Cursor == componentCount && len(m.UninstallComponents) > 0:
+			m.setScreen(ScreenUninstallConfirm)
+		case m.Cursor == componentCount+1:
+			m.setScreen(ScreenUninstall)
+		}
+		return m, nil
+	case ScreenUninstallConfirm:
+		if m.OperationRunning {
+			return m, nil
+		}
+		if m.Cursor == 0 {
+			m.OperationRunning = true
+			m.OperationMode = "uninstall"
+			return m, tea.Batch(tickCmd(), m.startUninstall())
+		}
+		m.setScreen(ScreenUninstallComponents)
+		return m, nil
+	case ScreenUninstallResult:
+		m = m.withResetUninstallState()
+		m.setScreen(ScreenWelcome)
+		return m, nil
 	case ScreenUpgrade:
 		// Guard: don't re-launch while running.
 		if m.OperationRunning {
@@ -1216,6 +1303,16 @@ func (m Model) withResetSyncState() Model {
 	return m
 }
 
+func (m Model) withResetUninstallState() Model {
+	m.UninstallResult = componentuninstall.Result{}
+	m.UninstallErr = nil
+	m.OperationRunning = false
+	m.OperationMode = ""
+	m.UninstallComponents = defaultUninstallComponents()
+	m.Cursor = 0
+	return m
+}
+
 // withResetOperationState clears all operation-related state and resets the cursor,
 // returning a new Model with these fields cleared (value-receiver pattern for MVU).
 // This includes clearing PendingSyncOverrides, unlike withResetSyncState.
@@ -1256,6 +1353,19 @@ func (m Model) startSync(overrides *model.SyncOverrides) tea.Cmd {
 		}
 		filesChanged, err := syncFn(overrides)
 		return SyncDoneMsg{FilesChanged: filesChanged, Err: err}
+	}
+}
+
+func (m Model) startUninstall() tea.Cmd {
+	uninstallFn := m.UninstallFn
+	agentIDs := append([]model.AgentID(nil), m.UninstallAgents...)
+	componentIDs := append([]model.ComponentID(nil), m.UninstallComponents...)
+	return func() tea.Msg {
+		if uninstallFn == nil {
+			return UninstallDoneMsg{Err: fmt.Errorf("uninstall function not configured")}
+		}
+		result, err := uninstallFn(agentIDs, componentIDs)
+		return UninstallDoneMsg{Result: result, Err: err}
 	}
 }
 
@@ -1568,6 +1678,14 @@ func (m Model) optionCount() int {
 		return 1
 	case ScreenModelConfig:
 		return len(screens.ModelConfigOptions())
+	case ScreenUninstall:
+		return len(screens.UninstallAgentOptions()) + 2
+	case ScreenUninstallComponents:
+		return len(screens.UninstallComponentOptions()) + 2
+	case ScreenUninstallConfirm:
+		return 2
+	case ScreenUninstallResult:
+		return 1
 	case ScreenDetection:
 		return len(screens.DetectionOptions())
 	case ScreenAgents:
@@ -1632,6 +1750,49 @@ func (m *Model) toggleCurrentAgent() {
 	}
 
 	m.Selection.Agents = append(m.Selection.Agents, agent)
+}
+
+func (m *Model) toggleCurrentUninstallAgent() {
+	options := screens.UninstallAgentOptions()
+	if m.Cursor >= len(options) {
+		return
+	}
+
+	agentID := options[m.Cursor].ID
+	for idx, selected := range m.UninstallAgents {
+		if selected == agentID {
+			m.UninstallAgents = append(m.UninstallAgents[:idx], m.UninstallAgents[idx+1:]...)
+			return
+		}
+	}
+
+	m.UninstallAgents = append(m.UninstallAgents, agentID)
+}
+
+func (m *Model) toggleCurrentUninstallComponent() {
+	options := screens.UninstallComponentOptions()
+	if m.Cursor >= len(options) {
+		return
+	}
+
+	componentID := options[m.Cursor].ID
+	for idx, selected := range m.UninstallComponents {
+		if selected == componentID {
+			m.UninstallComponents = append(m.UninstallComponents[:idx], m.UninstallComponents[idx+1:]...)
+			return
+		}
+	}
+
+	m.UninstallComponents = append(m.UninstallComponents, componentID)
+}
+
+func defaultUninstallComponents() []model.ComponentID {
+	options := screens.UninstallComponentOptions()
+	components := make([]model.ComponentID, 0, len(options))
+	for _, option := range options {
+		components = append(components, option.ID)
+	}
+	return components
 }
 
 func (m *Model) toggleCurrentComponent() {

@@ -23,6 +23,7 @@ func WelcomeOptions(updateResults []update.UpdateResult, updateCheckDone bool) [
 		"Sync configs",
 		"Upgrade + Sync",
 		"Configure models",
+		"Uninstall configs",
 		"Manage backups",
 		"Quit",
 	}

@@ -12,6 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gentleman-programming/gentle-ai/internal/backup"
 	"github.com/gentleman-programming/gentle-ai/internal/cli"
+	componentuninstall "github.com/gentleman-programming/gentle-ai/internal/components/uninstall"
 	"github.com/gentleman-programming/gentle-ai/internal/model"
 	"github.com/gentleman-programming/gentle-ai/internal/pipeline"
 	"github.com/gentleman-programming/gentle-ai/internal/planner"
@@ -27,9 +28,10 @@ import (
 var Version = "dev"
 
 var (
-	updateCheckAll      = update.CheckAll
-	updateCheckFiltered = update.CheckFiltered
-	upgradeExecute      = upgrade.Execute
+	updateCheckAll            = update.CheckAll
+	updateCheckFiltered       = update.CheckFiltered
+	upgradeExecute            = upgrade.Execute
+	runUninstallWithSelection = cli.RunUninstallWithSelection
 )
 
 func Run() error {
@@ -81,6 +83,7 @@ func RunArgs(args []string, stdout io.Writer) error {
 		m.Backups = ListBackups()
 		m.UpgradeFn = tuiUpgrade(profile, homeDir)
 		m.SyncFn = tuiSync(homeDir)
+		m.UninstallFn = tuiUninstall(homeDir)
 		p := tea.NewProgram(m, tea.WithAltScreen())
 		_, err = p.Run()
 		return err
@@ -115,6 +118,15 @@ func RunArgs(args []string, stdout io.Writer) error {
 		}
 
 		_, _ = fmt.Fprintln(stdout, cli.RenderSyncReport(syncResult))
+		return nil
+	case "uninstall":
+		uninstallResult, err := cli.RunUninstall(args[1:], stdout)
+		if err != nil {
+			return err
+		}
+		if uninstallResult.Manifest.ID != "" {
+			_, _ = fmt.Fprintln(stdout, cli.RenderUninstallReport(uninstallResult))
+		}
 		return nil
 	case "restore":
 		return cli.RunRestore(args[1:], stdout)
@@ -269,6 +281,16 @@ func tuiSync(homeDir string) tui.SyncFunc {
 			return 0, err
 		}
 		return result.FilesChanged, nil
+	}
+}
+
+func tuiUninstall(homeDir string) tui.UninstallFunc {
+	return func(agentIDs []model.AgentID, componentIDs []model.ComponentID) (componentuninstall.Result, error) {
+		workspaceDir, err := os.Getwd()
+		if err != nil {
+			return componentuninstall.Result{}, fmt.Errorf("resolve workspace directory: %w", err)
+		}
+		return runUninstallWithSelection(homeDir, workspaceDir, agentIDs, componentIDs)
 	}
 }
 
