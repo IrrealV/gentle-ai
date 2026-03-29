@@ -125,18 +125,17 @@ func binaryUpgrade(ctx context.Context, r update.UpdateResult, profile system.Pl
 
 // engramBinaryUpgrade downloads the latest engram binary using its dedicated
 // cross-platform downloader and adds the install directory to PATH.
+// On Windows the PATH change is also persisted to the user registry via PowerShell.
 func engramBinaryUpgrade(profile system.PlatformProfile) error {
 	binaryPath, err := engramDownloadFn(profile)
 	if err != nil {
 		return fmt.Errorf("download engram binary: %w", err)
 	}
-	// Add install dir to PATH for the current process so the new binary is found.
+	// Add install dir to PATH. On Windows this also persists via PowerShell (user registry).
 	binDir := filepath.Dir(binaryPath)
-	currentPath := os.Getenv("PATH")
-	if currentPath == "" {
-		os.Setenv("PATH", binDir)
-	} else {
-		os.Setenv("PATH", binDir+string(os.PathListSeparator)+currentPath)
+	if err := system.AddToUserPath(binDir); err != nil {
+		// Non-fatal: the binary was downloaded successfully. Warn and continue.
+		fmt.Fprintf(os.Stderr, "WARNING: could not add %s to PATH: %v\n", binDir, err)
 	}
 	return nil
 }

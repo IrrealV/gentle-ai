@@ -455,12 +455,11 @@ func (s componentApplyStep) Run() error {
 				}
 				// Add the install directory to PATH so subsequent commands
 				// (engram setup, engram.Inject → resolveEngramCommand) can find it.
+				// On Windows this also persists the change to the user registry via PowerShell.
 				binDir := filepath.Dir(binaryPath)
-				currentPath := os.Getenv("PATH")
-				if currentPath == "" {
-					os.Setenv("PATH", binDir)
-				} else {
-					os.Setenv("PATH", binDir+string(os.PathListSeparator)+currentPath)
+				if err := system.AddToUserPath(binDir); err != nil {
+					// Non-fatal: warn but continue — the binary was downloaded successfully.
+					fmt.Fprintf(os.Stderr, "WARNING: could not add %s to PATH: %v\n", binDir, err)
 				}
 			}
 		}
@@ -554,6 +553,13 @@ func (s componentApplyStep) Run() error {
 		if runtime.GOOS == "windows" {
 			if err := gga.EnsurePowerShellShim(s.homeDir); err != nil {
 				return fmt.Errorf("ensure gga powershell shim: %w", err)
+			}
+			// Add GGA bin dir to the user PATH persistently on Windows.
+			// GGA's install.sh drops the binary into ~/bin which is not on PATH by default.
+			ggaBinDir := filepath.Join(s.homeDir, "bin")
+			if err := system.AddToUserPath(ggaBinDir); err != nil {
+				// Non-fatal: warn but continue — GGA was installed successfully.
+				fmt.Fprintf(os.Stderr, "WARNING: could not add %s to PATH: %v\n", ggaBinDir, err)
 			}
 		}
 		if _, err := gga.Inject(s.homeDir, s.agents); err != nil {
