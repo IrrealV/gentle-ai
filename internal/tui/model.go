@@ -1011,7 +1011,9 @@ func (m Model) confirmSelection() (tea.Model, tea.Cmd) {
 		default:
 			// "Back" — in custom preset, return to the screen that preceded SkillPicker.
 			if m.Selection.Preset == model.PresetCustom {
-				if m.shouldShowSDDModeScreen() {
+				if m.shouldShowStrictTDDScreen() {
+					m.setScreen(ScreenStrictTDD)
+				} else if m.shouldShowSDDModeScreen() {
 					if m.Selection.SDDMode == model.SDDModeMulti {
 						cachePath := opencode.DefaultCachePath()
 						if _, err := osStatModelCache(cachePath); err == nil {
@@ -1024,8 +1026,6 @@ func (m Model) confirmSelection() (tea.Model, tea.Cmd) {
 					}
 				} else if m.shouldShowClaudeModelPickerScreen() {
 					m.setScreen(ScreenClaudeModelPicker)
-				} else if m.shouldShowStrictTDDScreen() {
-					m.setScreen(ScreenStrictTDD)
 				} else {
 					m.setScreen(ScreenDependencyTree)
 				}
@@ -1044,6 +1044,8 @@ func (m Model) confirmSelection() (tea.Model, tea.Cmd) {
 					m.initSkillPicker()
 				}
 				m.setScreen(ScreenSkillPicker)
+			} else if m.shouldShowStrictTDDScreen() {
+				m.setScreen(ScreenStrictTDD)
 			} else if m.shouldShowSDDModeScreen() {
 				if m.Selection.SDDMode == model.SDDModeMulti {
 					cachePath := opencode.DefaultCachePath()
@@ -1057,8 +1059,6 @@ func (m Model) confirmSelection() (tea.Model, tea.Cmd) {
 				}
 			} else if m.shouldShowClaudeModelPickerScreen() {
 				m.setScreen(ScreenClaudeModelPicker)
-			} else if m.shouldShowStrictTDDScreen() {
-				m.setScreen(ScreenStrictTDD)
 			} else {
 				m.setScreen(ScreenDependencyTree)
 			}
@@ -1311,10 +1311,12 @@ func (m Model) goBack() Model {
 	}
 
 	// From SkillPicker, go back to the preceding screen.
-	// In custom preset: StrictTDD/SDDMode/ModelPicker/ClaudeModelPicker precede SkillPicker.
+	// In custom preset: StrictTDD precedes SkillPicker; SDDMode/ModelPicker/ClaudeModelPicker precede StrictTDD.
 	if m.Screen == ScreenSkillPicker {
 		if m.Selection.Preset == model.PresetCustom {
-			if m.shouldShowSDDModeScreen() {
+			if m.shouldShowStrictTDDScreen() {
+				m.setScreen(ScreenStrictTDD)
+			} else if m.shouldShowSDDModeScreen() {
 				if m.Selection.SDDMode == model.SDDModeMulti {
 					cachePath := opencode.DefaultCachePath()
 					if _, err := osStatModelCache(cachePath); err == nil {
@@ -1327,8 +1329,6 @@ func (m Model) goBack() Model {
 				}
 			} else if m.shouldShowClaudeModelPickerScreen() {
 				m.setScreen(ScreenClaudeModelPicker)
-			} else if m.shouldShowStrictTDDScreen() {
-				m.setScreen(ScreenStrictTDD)
 			} else {
 				m.setScreen(ScreenDependencyTree)
 			}
@@ -1413,12 +1413,17 @@ func (m Model) goBack() Model {
 	}
 
 	// In custom preset, going back from Review walks through intermediate screens.
+	// Order (reverse of forward): SkillPicker → StrictTDD → SDDMode/ModelPicker → ClaudeModelPicker → DependencyTree.
 	if m.Screen == ScreenReview && m.Selection.Preset == model.PresetCustom {
 		if m.shouldShowSkillPickerScreen() {
 			if len(m.SkillPicker) == 0 {
 				m.initSkillPicker()
 			}
 			m.setScreen(ScreenSkillPicker)
+			return m
+		}
+		if m.shouldShowStrictTDDScreen() {
+			m.setScreen(ScreenStrictTDD)
 			return m
 		}
 		if m.shouldShowSDDModeScreen() {
@@ -1436,10 +1441,6 @@ func (m Model) goBack() Model {
 		}
 		if m.shouldShowClaudeModelPickerScreen() {
 			m.setScreen(ScreenClaudeModelPicker)
-			return m
-		}
-		if m.shouldShowStrictTDDScreen() {
-			m.setScreen(ScreenStrictTDD)
 			return m
 		}
 		m.setScreen(ScreenDependencyTree)

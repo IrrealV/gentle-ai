@@ -2078,3 +2078,84 @@ func TestCustomPresetReviewBackGoesToStrictTDD(t *testing.T) {
 		t.Fatalf("screen = %v, want ScreenStrictTDD after Back on Review (custom preset + SDD, no Skills)", state.Screen)
 	}
 }
+
+// TestCustomReviewBackGoesToStrictTDDNotSDDMode verifies that in the custom preset,
+// with OpenCode + SDD (no Skills), pressing Back on ScreenReview goes to ScreenStrictTDD
+// and NOT directly to ScreenSDDMode. StrictTDD must come before SDDMode in the back chain.
+func TestCustomReviewBackGoesToStrictTDDNotSDDMode(t *testing.T) {
+	m := NewModel(system.DetectionResult{}, "dev")
+	m.Screen = ScreenReview
+	m.Selection.Preset = model.PresetCustom
+	// OpenCode + SDD → shouldShowSDDModeScreen() = true AND shouldShowStrictTDDScreen() = true.
+	m.Selection.Agents = []model.AgentID{model.AgentOpenCode}
+	// No Skills → shouldShowSkillPickerScreen() = false.
+	m.Selection.Components = []model.ComponentID{model.ComponentSDD}
+	m.Selection.SDDMode = model.SDDModeSingle
+	// cursor == 1 → "Back" option on ScreenReview.
+	m.Cursor = 1
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	state := updated.(Model)
+
+	if state.Screen != ScreenStrictTDD {
+		t.Fatalf("screen = %v, want ScreenStrictTDD (not SDDMode) after Back on Review (custom preset + OpenCode + SDD, no Skills)", state.Screen)
+	}
+}
+
+// TestCustomReviewBackGoesToStrictTDDNotModelPicker verifies that in the custom preset,
+// with OpenCode + SDD Multi + model cache present (no Skills), pressing Back on ScreenReview
+// goes to ScreenStrictTDD and NOT to ScreenModelPicker.
+func TestCustomReviewBackGoesToStrictTDDNotModelPicker(t *testing.T) {
+	tmpDir := t.TempDir()
+	cacheFile := tmpDir + "/models.json"
+	if err := os.WriteFile(cacheFile, []byte(`{}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	origStat := osStatModelCache
+	osStatModelCache = func(name string) (os.FileInfo, error) {
+		return os.Stat(cacheFile) // stat succeeds → cache present
+	}
+	t.Cleanup(func() { osStatModelCache = origStat })
+
+	m := NewModel(system.DetectionResult{}, "dev")
+	m.Screen = ScreenReview
+	m.Selection.Preset = model.PresetCustom
+	// OpenCode + SDD Multi → shouldShowSDDModeScreen()=true, SDDModeMulti + cache → would pick ModelPicker.
+	m.Selection.Agents = []model.AgentID{model.AgentOpenCode}
+	// No Skills → shouldShowSkillPickerScreen() = false.
+	m.Selection.Components = []model.ComponentID{model.ComponentSDD}
+	m.Selection.SDDMode = model.SDDModeMulti
+	// cursor == 1 → "Back" option on ScreenReview.
+	m.Cursor = 1
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	state := updated.(Model)
+
+	if state.Screen != ScreenStrictTDD {
+		t.Fatalf("screen = %v, want ScreenStrictTDD (not ModelPicker) after Back on Review (custom preset + OpenCode + SDD Multi + cache, no Skills)", state.Screen)
+	}
+}
+
+// TestCustomSkillPickerBackGoesToStrictTDD verifies that in the custom preset,
+// with OpenCode + SDD + Skills, pressing Back on ScreenSkillPicker goes to ScreenStrictTDD
+// and NOT directly to ScreenSDDMode. StrictTDD must come before SDDMode in the back chain.
+func TestCustomSkillPickerBackGoesToStrictTDD(t *testing.T) {
+	m := NewModel(system.DetectionResult{}, "dev")
+	m.Screen = ScreenSkillPicker
+	m.Selection.Preset = model.PresetCustom
+	// OpenCode + SDD + Skills → shouldShowSDDModeScreen()=true, shouldShowStrictTDDScreen()=true, shouldShowSkillPickerScreen()=true.
+	m.Selection.Agents = []model.AgentID{model.AgentOpenCode}
+	m.Selection.Components = []model.ComponentID{model.ComponentSDD, model.ComponentSkills}
+	m.Selection.SDDMode = model.SDDModeSingle
+	// cursor > len(allSkills)+1 → the "Back" option (default case in switch).
+	allSkills := screens.AllSkillsOrdered()
+	m.Cursor = len(allSkills) + 1
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	state := updated.(Model)
+
+	if state.Screen != ScreenStrictTDD {
+		t.Fatalf("screen = %v, want ScreenStrictTDD (not SDDMode) after Back on SkillPicker (custom preset + OpenCode + SDD + Skills)", state.Screen)
+	}
+}
