@@ -117,6 +117,15 @@ const (
 	DelegationAny         DelegationModel = "any"
 )
 
+func (d DelegationModel) IsValid() bool {
+	switch d {
+	case DelegationSingleAgent, DelegationMultiAgent, DelegationAny:
+		return true
+	default:
+		return false
+	}
+}
+
 // Skill represents metadata for a skill in the catalog.
 type Skill struct {
 	ID              SkillID

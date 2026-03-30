@@ -46,8 +46,15 @@ func WriteFileAtomic(path string, content []byte, perm fs.FileMode) (WriteResult
 	// restricted permissions (e.g. 555) by a previous installer version or
 	// the target agent itself. MkdirAll succeeds on existing dirs but does
 	// not fix their permissions, causing os.CreateTemp to fail below.
-	if err := os.Chmod(dir, 0o755); err != nil {
-		return WriteResult{}, fmt.Errorf("set write permission on directory for %q: %w", path, err)
+	info, err := os.Stat(dir)
+	if err != nil {
+		return WriteResult{}, fmt.Errorf("stat parent directory for %q: %w", path, err)
+	}
+	dirPerm := info.Mode().Perm()
+	if dirPerm&0o200 == 0 {
+		if err := os.Chmod(dir, dirPerm|0o200); err != nil {
+			return WriteResult{}, fmt.Errorf("add owner-write permission on directory for %q: %w", path, err)
+		}
 	}
 
 	tmp, err := os.CreateTemp(dir, ".gentle-ai-*.tmp")

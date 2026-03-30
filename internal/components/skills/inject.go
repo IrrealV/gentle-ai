@@ -6,6 +6,7 @@ import (
 	"log"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"text/template"
 
@@ -14,6 +15,8 @@ import (
 	"github.com/gentleman-programming/gentle-ai/internal/components/filemerge"
 	"github.com/gentleman-programming/gentle-ai/internal/model"
 )
+
+var skillIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
 // isSDDSkill reports whether a skill ID belongs to the SDD orchestrator suite.
 // SDD skills are installed by the SDD component; the skills component skips
@@ -27,6 +30,12 @@ func validateSkillID(id model.SkillID) error {
 	strID := string(id)
 	if strID == "" {
 		return fmt.Errorf("skill ID cannot be empty")
+	}
+	if !skillIDPattern.MatchString(strID) {
+		return fmt.Errorf("skill ID %q must match %s", strID, skillIDPattern.String())
+	}
+	if strings.HasSuffix(strID, ".") || strings.HasSuffix(strID, " ") || strings.ContainsRune(strID, ':') {
+		return fmt.Errorf("skill ID %q has unsafe trailing/special characters", strID)
 	}
 	if strings.Contains(strID, "/") || strings.Contains(strID, "\\") {
 		return fmt.Errorf("skill ID contains invalid characters (slashes)")
@@ -97,6 +106,9 @@ func Inject(homeDir string, adapter agents.Adapter, skillIDs []model.SkillID) (I
 	templateData := SkillTemplateData{
 		DelegationModel: adapter.DelegationModel(),
 	}
+	if !templateData.DelegationModel.IsValid() || templateData.DelegationModel == model.DelegationAny {
+		return InjectionResult{}, fmt.Errorf("adapter %q returned invalid delegation model %q", adapter.Agent(), templateData.DelegationModel)
+	}
 
 	// Build a lookup map for skill metadata
 	skillMetadata := make(map[model.SkillID]model.Skill)
@@ -117,10 +129,18 @@ func Inject(homeDir string, adapter agents.Adapter, skillIDs []model.SkillID) (I
 		}
 
 		// Static filtering: if skill requires specific delegation model and adapter doesn't match, skip silently.
-		if meta, exists := skillMetadata[id]; exists {
-			if meta.DelegationModel != model.DelegationAny && meta.DelegationModel != adapter.DelegationModel() {
-				continue
-			}
+		meta, exists := skillMetadata[id]
+		if !exists {
+			log.Printf("skills: skipping %q — not present in catalog", id)
+			skipped = append(skipped, id)
+			continue
+		}
+		if !meta.DelegationModel.IsValid() {
+			return InjectionResult{}, fmt.Errorf("skill %q has invalid delegation model %q", id, meta.DelegationModel)
+		}
+		if meta.DelegationModel != model.DelegationAny && meta.DelegationModel != templateData.DelegationModel {
+			skipped = append(skipped, id)
+			continue
 		}
 
 		assetPath := "skills/" + string(id) + "/SKILL.md"
@@ -136,16 +156,12 @@ func Inject(homeDir string, adapter agents.Adapter, skillIDs []model.SkillID) (I
 
 		tmpl, err := template.New(string(id)).Delims("[[", "]]").Parse(string(content))
 		if err != nil {
-			log.Printf("skills: skipping %q — failed to parse template: %v", id, err)
-			skipped = append(skipped, id)
-			continue
+			return InjectionResult{}, fmt.Errorf("skill %q: template parse failed: %w", id, err)
 		}
 
 		var buf bytes.Buffer
 		if err := tmpl.Execute(&buf, templateData); err != nil {
-			log.Printf("skills: skipping %q — failed to render template: %v", id, err)
-			skipped = append(skipped, id)
-			continue
+			return InjectionResult{}, fmt.Errorf("skill %q: template render failed: %w", id, err)
 		}
 
 		path := filepath.Join(skillDir, string(id), "SKILL.md")
