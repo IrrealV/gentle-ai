@@ -84,6 +84,7 @@ func RenderUninstallReport(result componentuninstall.Result) string {
 	appendPathSection(&b, "Rewritten files", result.ChangedFiles)
 	appendPathSection(&b, "Deleted files", result.RemovedFiles)
 	appendPathSection(&b, "Deleted directories", result.RemovedDirectories)
+	appendPathSection(&b, "Manual cleanup required", result.ManualActions)
 
 	return strings.TrimRight(b.String(), "\n")
 }
