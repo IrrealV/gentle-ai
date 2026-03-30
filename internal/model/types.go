@@ -133,6 +133,20 @@ type Skill struct {
 	Category        string
 	Priority        string
 	DelegationModel DelegationModel
+
+	// Capabilities is the new capability-based requirements model.
+	// When set, the resolver uses this instead of DelegationModel.
+	// When nil, DelegationModel is converted to Capabilities for backward compatibility.
+	Capabilities *SkillCapabilities
+}
+
+// GetCapabilities returns the skill's capabilities, deriving them from
+// DelegationModel if not explicitly set. This ensures backward compatibility.
+func (s Skill) GetCapabilities() SkillCapabilities {
+	if s.Capabilities != nil {
+		return *s.Capabilities
+	}
+	return SkillCapabilitiesFromDelegationModel(s.DelegationModel)
 }
 
 var mvpSkills = []Skill{
@@ -150,7 +164,19 @@ var mvpSkills = []Skill{
 	// Foundation skills
 	{ID: SkillGoTesting, Name: "go-testing", Category: "testing", Priority: "p0", DelegationModel: DelegationAny},
 	{ID: SkillCreator, Name: "skill-creator", Category: "workflow", Priority: "p0", DelegationModel: DelegationAny},
-	{ID: SkillJudgmentDay, Name: "judgment-day", Category: "workflow", Priority: "p0", DelegationModel: DelegationMultiAgent},
+	{
+		ID:              SkillJudgmentDay,
+		Name:            "judgment-day",
+		Category:        "workflow",
+		Priority:        "p0",
+		DelegationModel: DelegationMultiAgent,
+		Capabilities: &SkillCapabilities{
+			RequiredCapabilities: []RuntimeCapability{CapabilitySubAgents},
+			ExecutionPattern:     PatternNative,
+			FallbackPattern:      PatternSequentialFallback,
+			FallbackCapabilities: []RuntimeCapability{CapabilitySequentialExecution, CapabilityFileSystem},
+		},
+	},
 	{ID: SkillBranchPR, Name: "branch-pr", Category: "workflow", Priority: "p0", DelegationModel: DelegationAny},
 	{ID: SkillIssueCreation, Name: "issue-creation", Category: "workflow", Priority: "p0", DelegationModel: DelegationAny},
 }

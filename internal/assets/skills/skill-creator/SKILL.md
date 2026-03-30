@@ -12,11 +12,13 @@ allowed-tools: Read, Edit, Write, Glob, Grep, Bash, WebFetch, WebSearch, Task
 
 ## When to Create a Skill
 
-[[ if eq .DelegationModel "multi" ]]
+[[- if eq .ResolutionMode "native" ]][[- if eq .DelegationModel "multi" ]]
 > **DELEGATION INSTRUCTION**: As a multi-agent orchestrator, delegate the creation of new skills to your Terminal sub-agent by passing the specifications.
-[[ else ]]
+[[- else ]]
 > **EXECUTION INSTRUCTION**: Use your direct execution tools to create the files for the new skill.
-[[ end ]]
+[[- end ]][[- else ]]
+> **EXECUTION INSTRUCTION**: Use your direct execution tools to create the files for the new skill.
+[[- end ]]
 
 Create a skill when:
 - A pattern is used repeatedly and AI needs guidance

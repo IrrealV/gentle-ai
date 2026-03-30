@@ -53,11 +53,22 @@ type InjectionResult struct {
 	Changed bool
 	Files   []string
 	Skipped []model.SkillID
+
+	// Resolutions contains the resolution result for each injected skill.
+	// Keyed by SkillID for easy lookup. Only populated for successfully injected skills.
+	Resolutions map[model.SkillID]model.ResolutionResult
 }
 
 // SkillTemplateData provides context to the skill Markdown templates.
 type SkillTemplateData struct {
 	DelegationModel model.DelegationModel
+
+	// ResolutionMode indicates how this skill is being executed (native/fallback).
+	// Available for templates that need to adapt content based on execution mode.
+	ResolutionMode model.ResolutionMode
+
+	// ExecutionPattern is the actual pattern being used (native or sequential_fallback).
+	ExecutionPattern model.ExecutionPattern
 }
 
 // Inject writes the embedded SKILL.md files for each requested skill
@@ -101,14 +112,17 @@ func Inject(homeDir string, adapter agents.Adapter, skillIDs []model.SkillID) (I
 
 	paths := make([]string, 0, len(skillIDs))
 	skipped := make([]model.SkillID, 0)
+	resolutions := make(map[model.SkillID]model.ResolutionResult)
 	changed := false
 
-	templateData := SkillTemplateData{
-		DelegationModel: adapter.DelegationModel(),
+	// Get adapter's delegation model for template backward compatibility
+	delegationModel := adapter.DelegationModel()
+	if !delegationModel.IsValid() || delegationModel == model.DelegationAny {
+		return InjectionResult{}, fmt.Errorf("adapter %q returned invalid delegation model %q", adapter.Agent(), delegationModel)
 	}
-	if !templateData.DelegationModel.IsValid() || templateData.DelegationModel == model.DelegationAny {
-		return InjectionResult{}, fmt.Errorf("adapter %q returned invalid delegation model %q", adapter.Agent(), templateData.DelegationModel)
-	}
+
+	// Get runtime capabilities for capability-aware resolution
+	runtimeCaps := agents.GetRuntimeCapabilitySet(adapter)
 
 	// Build a lookup map for skill metadata
 	skillMetadata := make(map[model.SkillID]model.Skill)
@@ -128,17 +142,21 @@ func Inject(homeDir string, adapter agents.Adapter, skillIDs []model.SkillID) (I
 			continue
 		}
 
-		// Static filtering: if skill requires specific delegation model and adapter doesn't match, skip silently.
+		// Get skill metadata
 		meta, exists := skillMetadata[id]
 		if !exists {
 			log.Printf("skills: skipping %q — not present in catalog", id)
 			skipped = append(skipped, id)
 			continue
 		}
-		if !meta.DelegationModel.IsValid() {
-			return InjectionResult{}, fmt.Errorf("skill %q has invalid delegation model %q", id, meta.DelegationModel)
-		}
-		if meta.DelegationModel != model.DelegationAny && meta.DelegationModel != templateData.DelegationModel {
+
+		// Resolve skill compatibility using the new capability-aware resolver
+		skillCaps := meta.GetCapabilities()
+		resolution := model.ResolveSkillCompatibility(skillCaps, runtimeCaps)
+
+		// Skip unsupported skills
+		if resolution.Mode == model.ResolutionModeUnsupported {
+			log.Printf("skills: skipping %q — %s", id, resolution.Reason)
 			skipped = append(skipped, id)
 			continue
 		}
@@ -152,6 +170,13 @@ func Inject(homeDir string, adapter agents.Adapter, skillIDs []model.SkillID) (I
 		}
 		if len(content) == 0 {
 			return InjectionResult{}, fmt.Errorf("skill %q: embedded asset exists but is empty — build may be corrupt", id)
+		}
+
+		// Build template data with both legacy and new fields
+		templateData := SkillTemplateData{
+			DelegationModel:  delegationModel,
+			ResolutionMode:   resolution.Mode,
+			ExecutionPattern: resolution.Pattern,
 		}
 
 		tmpl, err := template.New(string(id)).Delims("[[", "]]").Parse(string(content))
@@ -172,9 +197,10 @@ func Inject(homeDir string, adapter agents.Adapter, skillIDs []model.SkillID) (I
 
 		changed = changed || writeResult.Changed
 		paths = append(paths, path)
+		resolutions[id] = resolution
 	}
 
-	return InjectionResult{Changed: changed, Files: paths, Skipped: skipped}, nil
+	return InjectionResult{Changed: changed, Files: paths, Skipped: skipped, Resolutions: resolutions}, nil
 }
 
 // SkillPathForAgent returns the filesystem path where a skill file would be written.

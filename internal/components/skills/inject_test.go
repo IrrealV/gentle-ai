@@ -373,3 +373,172 @@ func TestInjectTemplateDelegation(t *testing.T) {
 		t.Errorf("Single-agent template incorrectly includes multi-agent branch text")
 	}
 }
+
+func TestInjectResolutionResult_NativeMode(t *testing.T) {
+	home := t.TempDir()
+
+	// Multi-agent adapter injecting a DelegationAny skill should resolve as native
+	adapter := &mockMultiAgentAdapter{}
+	result, err := Inject(home, adapter, []model.SkillID{model.SkillCreator})
+	if err != nil {
+		t.Fatalf("Inject() error = %v", err)
+	}
+
+	// Check that resolution was recorded
+	if result.Resolutions == nil {
+		t.Fatal("Resolutions map is nil")
+	}
+
+	res, ok := result.Resolutions[model.SkillCreator]
+	if !ok {
+		t.Fatal("Resolution not recorded for skill-creator")
+	}
+
+	if res.Mode != model.ResolutionModeNative {
+		t.Errorf("Resolution.Mode = %v, want native", res.Mode)
+	}
+	if res.Pattern != model.PatternNative {
+		t.Errorf("Resolution.Pattern = %v, want native", res.Pattern)
+	}
+}
+
+func TestInjectResolutionResult_SkipsMultiOnlyOnSingleAgent(t *testing.T) {
+	home := t.TempDir()
+
+	// Single-agent adapter trying to inject judgment-day
+	// Note: judgment-day now has fallback capabilities defined, so it will be
+	// injected in fallback mode instead of being skipped.
+	// This test verifies the fallback behavior works correctly.
+	adapter := &mockSingleAgentAdapter{}
+	result, err := Inject(home, adapter, []model.SkillID{model.SkillJudgmentDay})
+	if err != nil {
+		t.Fatalf("Inject() error = %v", err)
+	}
+
+	// judgment-day should be injected in fallback mode (not skipped)
+	if len(result.Skipped) != 0 {
+		t.Errorf("Skipped = %v, want [] (judgment-day has fallback)", result.Skipped)
+	}
+
+	// Resolution should be recorded as fallback
+	res, ok := result.Resolutions[model.SkillJudgmentDay]
+	if !ok {
+		t.Fatal("Resolution should be recorded for judgment-day in fallback mode")
+	}
+	if res.Mode != model.ResolutionModeFallback {
+		t.Errorf("Resolution.Mode = %v, want fallback", res.Mode)
+	}
+}
+
+func TestInjectResolutionResult_LegacySkillBackwardCompatible(t *testing.T) {
+	home := t.TempDir()
+
+	// Skills without explicit Capabilities should work via DelegationModel conversion
+	// SkillCreator has DelegationAny, so it should work on both multi and single
+
+	// Test on multi-agent
+	multiAdapter := &mockMultiAgentAdapter{}
+	multiResult, err := Inject(home, multiAdapter, []model.SkillID{model.SkillCreator})
+	if err != nil {
+		t.Fatalf("Inject(multi) error = %v", err)
+	}
+	if len(multiResult.Files) != 1 {
+		t.Errorf("multi: Files = %d, want 1", len(multiResult.Files))
+	}
+
+	// Test on single-agent
+	singleAdapter := &mockSingleAgentAdapter{}
+	singleResult, err := Inject(home, singleAdapter, []model.SkillID{model.SkillCreator})
+	if err != nil {
+		t.Fatalf("Inject(single) error = %v", err)
+	}
+	if len(singleResult.Files) != 1 {
+		t.Errorf("single: Files = %d, want 1", len(singleResult.Files))
+	}
+}
+
+// NOTE: TestInjectJudgmentDay_NativeMode and TestInjectJudgmentDay_FallbackMode
+// were removed because judgment-day is an SDD skill written by the SDD component
+// without template processing. The capability-aware resolution still works, but
+// the template cannot have conditional content based on ResolutionMode.
+// This is a known limitation documented for Step 4 of the capability migration.
+
+func TestInjectTemplateComparator_Regression(t *testing.T) {
+	// Regression test: ensure templates use correct comparator values
+	// Bug: sdd-apply was using "multi-agent" instead of "multi"
+
+	home := t.TempDir()
+
+	// Multi-agent adapter injecting sdd-apply
+	// Note: sdd-apply is an SDD skill, so it's skipped by the skills component
+	// We test skill-creator instead which has similar template logic
+
+	adapter := &mockMultiAgentAdapter{}
+	result, err := Inject(home, adapter, []model.SkillID{model.SkillCreator})
+	if err != nil {
+		t.Fatalf("Inject() error = %v", err)
+	}
+
+	if len(result.Files) != 1 {
+		t.Fatalf("Files = %d, want 1", len(result.Files))
+	}
+
+	path := filepath.Join(home, "multi", "skill-creator", "SKILL.md")
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+
+	text := string(content)
+
+	// Multi-agent should get DELEGATION instruction
+	if !strings.Contains(text, "DELEGATION INSTRUCTION") {
+		t.Error("Multi-agent template should contain 'DELEGATION INSTRUCTION'")
+	}
+
+	// Single-agent should get EXECUTION instruction
+	singleAdapter := &mockSingleAgentAdapter{}
+	singleResult, err := Inject(home, singleAdapter, []model.SkillID{model.SkillCreator})
+	if err != nil {
+		t.Fatalf("Inject(single) error = %v", err)
+	}
+
+	if len(singleResult.Files) != 1 {
+		t.Fatalf("single: Files = %d, want 1", len(singleResult.Files))
+	}
+
+	singlePath := filepath.Join(home, "single", "skill-creator", "SKILL.md")
+	singleContent, err := os.ReadFile(singlePath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+
+	singleText := string(singleContent)
+
+	// Single-agent should get EXECUTION instruction
+	if !strings.Contains(singleText, "EXECUTION INSTRUCTION") {
+		t.Error("Single-agent template should contain 'EXECUTION INSTRUCTION'")
+	}
+}
+
+func TestInjectJudgmentDay_Idempotent(t *testing.T) {
+	home := t.TempDir()
+
+	// First inject
+	result1, err := Inject(home, opencodeAdapter(), []model.SkillID{model.SkillJudgmentDay})
+	if err != nil {
+		t.Fatalf("Inject() first error = %v", err)
+	}
+	if !result1.Changed {
+		t.Fatalf("Inject() first changed = false, expected true")
+	}
+
+	// Second inject - should be idempotent
+	result2, err := Inject(home, opencodeAdapter(), []model.SkillID{model.SkillJudgmentDay})
+	if err != nil {
+		t.Fatalf("Inject() second error = %v", err)
+	}
+	if result2.Changed {
+		t.Errorf("Inject() second changed = true, expected false (idempotent)")
+	}
+}
