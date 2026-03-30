@@ -766,7 +766,7 @@ func TestWelcomeMenu_ConfigureModelsNavigation(t *testing.T) {
 	}
 }
 
-// TestWelcomeMenu_UninstallNavigation verifies cursor 5 (Uninstall configs) goes to ScreenUninstall.
+// TestWelcomeMenu_UninstallNavigation verifies cursor 5 (Uninstall configs) goes to ScreenUninstallMode.
 func TestWelcomeMenu_UninstallNavigation(t *testing.T) {
 	m := NewModel(system.DetectionResult{}, "dev")
 	m.Screen = ScreenWelcome
@@ -775,8 +775,8 @@ func TestWelcomeMenu_UninstallNavigation(t *testing.T) {
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	state := updated.(Model)
 
-	if state.Screen != ScreenUninstall {
-		t.Fatalf("cursor=5 (Uninstall): screen = %v, want %v", state.Screen, ScreenUninstall)
+	if state.Screen != ScreenUninstallMode {
+		t.Fatalf("cursor=5 (Uninstall): screen = %v, want %v", state.Screen, ScreenUninstallMode)
 	}
 }
 
