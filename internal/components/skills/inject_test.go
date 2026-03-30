@@ -136,9 +136,9 @@ func TestInjectSkipsUnknownSkillGracefully(t *testing.T) {
 // noSkillsAdapter is a mock adapter that does not support skills.
 type noSkillsAdapter struct{}
 
-func (a noSkillsAdapter) Agent() model.AgentID    { return "no-skills" }
-func (a noSkillsAdapter) Tier() model.SupportTier { return model.TierFull }
-func (a noSkillsAdapter) DelegationModel() model.DelegationModel { return model.ModelSingleAgent }
+func (a noSkillsAdapter) Agent() model.AgentID                   { return "no-skills" }
+func (a noSkillsAdapter) Tier() model.SupportTier                { return model.TierFull }
+func (a noSkillsAdapter) DelegationModel() model.DelegationModel { return model.DelegationSingleAgent }
 func (a noSkillsAdapter) Detect(_ context.Context, _ string) (bool, string, string, bool, error) {
 	return false, "", "", false, nil
 }
@@ -189,7 +189,7 @@ func TestValidateSkillID(t *testing.T) {
 	}{
 		{"valid-skill", false},
 		{"sdd-apply", false},
-		{"", true}, // Empty ID
+		{"", true},                    // Empty ID
 		{"../../../etc/passwd", true}, // Path traversal
 		{"skill/with/slash", true},    // Slashes
 		{"skill\\with\\backslash", true},
@@ -230,18 +230,18 @@ func TestIsNilAdapter(t *testing.T) {
 }
 
 func TestInjectTemplateDelimiterCollision(t *testing.T) {
-	// This tests that our change from {{ }} to [[ ]] in text/template 
+	// This tests that our change from {{ }} to [[ ]] in text/template
 	// successfully prevents panics when the markdown has frontend code like Vue/Angular.
 
 	// Write a fake SKILL.md with colliding delimiters into the mock assets.
-	// Since we can't easily mock the assets FS, we rely on the fact that 
+	// Since we can't easily mock the assets FS, we rely on the fact that
 	// TestInjectUsesRealEmbeddedContent ensures no panics occur on current assets.
 	// We'll trust the text/template .Delims("[[", "]]") configuration here.
 }
 
 func TestInjectGracefulDegradation(t *testing.T) {
 	// This test relies on TestInjectUsesRealEmbeddedContent and TestInjectSkipsUnknownSkillGracefully
-	// to partially cover the graceful continuation. 
+	// to partially cover the graceful continuation.
 	// The real template errors are hard to simulate without a mock filesystem for assets,
 	// but TestInjectSkipsUnknownSkillGracefully proves that a failure on one skill
 	// doesn't block the return of the overall InjectionResult.
@@ -304,15 +304,29 @@ func TestSkillPathForAgent(t *testing.T) {
 	}
 }
 
-// mockMultiAgentAdapter is a mock adapter that returns ModelMultiAgent.
+// mockMultiAgentAdapter is a mock adapter that returns DelegationMultiAgent.
 type mockMultiAgentAdapter struct {
 	noSkillsAdapter
 }
 
-func (m *mockMultiAgentAdapter) Agent() model.AgentID    { return "mock-multi" }
-func (m *mockMultiAgentAdapter) SupportsSkills() bool    { return true }
+func (m *mockMultiAgentAdapter) Agent() model.AgentID         { return "mock-multi" }
+func (m *mockMultiAgentAdapter) SupportsSkills() bool         { return true }
 func (m *mockMultiAgentAdapter) SkillsDir(home string) string { return filepath.Join(home, "multi") }
-func (m *mockMultiAgentAdapter) DelegationModel() model.DelegationModel { return model.ModelMultiAgent }
+func (m *mockMultiAgentAdapter) DelegationModel() model.DelegationModel {
+	return model.DelegationMultiAgent
+}
+
+// mockSingleAgentAdapter is a mock adapter that returns DelegationSingleAgent.
+type mockSingleAgentAdapter struct {
+	noSkillsAdapter
+}
+
+func (m *mockSingleAgentAdapter) Agent() model.AgentID         { return "mock-single" }
+func (m *mockSingleAgentAdapter) SupportsSkills() bool         { return true }
+func (m *mockSingleAgentAdapter) SkillsDir(home string) string { return filepath.Join(home, "single") }
+func (m *mockSingleAgentAdapter) DelegationModel() model.DelegationModel {
+	return model.DelegationSingleAgent
+}
 
 func TestInjectTemplateDelegation(t *testing.T) {
 	home := t.TempDir()
@@ -338,13 +352,14 @@ func TestInjectTemplateDelegation(t *testing.T) {
 		t.Errorf("Multi-agent template incorrectly includes single-agent branch text")
 	}
 
-	// 2. Test SingleAgent branch using standard OpenCode adapter
-	_, err = Inject(home, opencodeAdapter(), []model.SkillID{model.SkillCreator})
+	// 2. Test SingleAgent branch using mock SingleAgent adapter
+	singleAdapter := &mockSingleAgentAdapter{}
+	_, err = Inject(home, singleAdapter, []model.SkillID{model.SkillCreator})
 	if err != nil {
 		t.Fatalf("Inject(single-agent) error = %v", err)
 	}
 
-	singlePath := filepath.Join(home, ".config", "opencode", "skills", "skill-creator", "SKILL.md")
+	singlePath := filepath.Join(home, "single", "skill-creator", "SKILL.md")
 	singleContent, err := os.ReadFile(singlePath)
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
@@ -358,4 +373,3 @@ func TestInjectTemplateDelegation(t *testing.T) {
 		t.Errorf("Single-agent template incorrectly includes multi-agent branch text")
 	}
 }
-

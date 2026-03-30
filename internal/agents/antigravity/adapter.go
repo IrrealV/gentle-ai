@@ -35,7 +35,7 @@ func (a *Adapter) Tier() model.SupportTier {
 }
 
 func (a *Adapter) DelegationModel() model.DelegationModel {
-	return model.ModelMultiAgent
+	return model.DelegationSingleAgent
 }
 
 // --- Detection ---

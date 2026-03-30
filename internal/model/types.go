@@ -112,6 +112,43 @@ const (
 type DelegationModel string
 
 const (
-	ModelSingleAgent DelegationModel = "single-agent"
-	ModelMultiAgent  DelegationModel = "multi-agent"
+	DelegationSingleAgent DelegationModel = "single"
+	DelegationMultiAgent  DelegationModel = "multi"
+	DelegationAny         DelegationModel = "any"
 )
+
+// Skill represents metadata for a skill in the catalog.
+type Skill struct {
+	ID              SkillID
+	Name            string
+	Category        string
+	Priority        string
+	DelegationModel DelegationModel
+}
+
+var mvpSkills = []Skill{
+	// SDD skills
+	{ID: SkillSDDInit, Name: "sdd-init", Category: "sdd", Priority: "p0", DelegationModel: DelegationAny},
+
+	{ID: SkillSDDApply, Name: "sdd-apply", Category: "sdd", Priority: "p0", DelegationModel: DelegationAny},
+	{ID: SkillSDDVerify, Name: "sdd-verify", Category: "sdd", Priority: "p0", DelegationModel: DelegationAny},
+	{ID: SkillSDDExplore, Name: "sdd-explore", Category: "sdd", Priority: "p0", DelegationModel: DelegationAny},
+	{ID: SkillSDDPropose, Name: "sdd-propose", Category: "sdd", Priority: "p0", DelegationModel: DelegationAny},
+	{ID: SkillSDDSpec, Name: "sdd-spec", Category: "sdd", Priority: "p0", DelegationModel: DelegationAny},
+	{ID: SkillSDDDesign, Name: "sdd-design", Category: "sdd", Priority: "p0", DelegationModel: DelegationAny},
+	{ID: SkillSDDTasks, Name: "sdd-tasks", Category: "sdd", Priority: "p0", DelegationModel: DelegationAny},
+	{ID: SkillSDDArchive, Name: "sdd-archive", Category: "sdd", Priority: "p0", DelegationModel: DelegationAny},
+	// Foundation skills
+	{ID: SkillGoTesting, Name: "go-testing", Category: "testing", Priority: "p0", DelegationModel: DelegationAny},
+	{ID: SkillCreator, Name: "skill-creator", Category: "workflow", Priority: "p0", DelegationModel: DelegationAny},
+	{ID: SkillJudgmentDay, Name: "judgment-day", Category: "workflow", Priority: "p0", DelegationModel: DelegationMultiAgent},
+	{ID: SkillBranchPR, Name: "branch-pr", Category: "workflow", Priority: "p0", DelegationModel: DelegationAny},
+	{ID: SkillIssueCreation, Name: "issue-creation", Category: "workflow", Priority: "p0", DelegationModel: DelegationAny},
+}
+
+// MVPSkills returns a copy of the MVP skill catalog.
+func MVPSkills() []Skill {
+	skills := make([]Skill, len(mvpSkills))
+	copy(skills, mvpSkills)
+	return skills
+}

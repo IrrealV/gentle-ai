@@ -17,10 +17,10 @@ type stubAdapter struct {
 	configDir string // value returned by GlobalConfigDir (may be empty)
 }
 
-func (s stubAdapter) Agent() model.AgentID      { return s.agent }
-func (s stubAdapter) Tier() model.SupportTier   { return model.TierFull }
-func (s stubAdapter) DelegationModel() model.DelegationModel { return model.ModelSingleAgent }
-func (s stubAdapter) SupportsAutoInstall() bool { return false }
+func (s stubAdapter) Agent() model.AgentID                   { return s.agent }
+func (s stubAdapter) Tier() model.SupportTier                { return model.TierFull }
+func (s stubAdapter) DelegationModel() model.DelegationModel { return model.DelegationSingleAgent }
+func (s stubAdapter) SupportsAutoInstall() bool              { return false }
 func (s stubAdapter) Detect(_ context.Context, _ string) (bool, string, string, bool, error) {
 	return false, "", "", false, nil
 }

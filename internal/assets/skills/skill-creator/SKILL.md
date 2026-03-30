@@ -12,7 +12,7 @@ allowed-tools: Read, Edit, Write, Glob, Grep, Bash, WebFetch, WebSearch, Task
 
 ## When to Create a Skill
 
-[[ if eq .DelegationModel "multi-agent" ]]
+[[ if eq .DelegationModel "multi" ]]
 > **DELEGATION INSTRUCTION**: As a multi-agent orchestrator, delegate the creation of new skills to your Terminal sub-agent by passing the specifications.
 [[ else ]]
 > **EXECUTION INSTRUCTION**: Use your direct execution tools to create the files for the new skill.

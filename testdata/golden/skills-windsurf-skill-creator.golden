@@ -12,6 +12,10 @@ allowed-tools: Read, Edit, Write, Glob, Grep, Bash, WebFetch, WebSearch, Task
 
 ## When to Create a Skill
 
+
+> **EXECUTION INSTRUCTION**: Use your direct execution tools to create the files for the new skill.
+
+
 Create a skill when:
 - A pattern is used repeatedly and AI needs guidance
 - Project-specific conventions differ from generic best practices

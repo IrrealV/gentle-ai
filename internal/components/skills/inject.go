@@ -98,6 +98,12 @@ func Inject(homeDir string, adapter agents.Adapter, skillIDs []model.SkillID) (I
 		DelegationModel: adapter.DelegationModel(),
 	}
 
+	// Build a lookup map for skill metadata
+	skillMetadata := make(map[model.SkillID]model.Skill)
+	for _, skill := range model.MVPSkills() {
+		skillMetadata[skill.ID] = skill
+	}
+
 	for _, id := range skillIDs {
 		// SDD skills are written by the SDD component — skip to avoid conflicts.
 		if isSDDSkill(id) {
@@ -108,6 +114,13 @@ func Inject(homeDir string, adapter agents.Adapter, skillIDs []model.SkillID) (I
 			log.Printf("skills: skipping %q — invalid ID: %v", id, err)
 			skipped = append(skipped, id)
 			continue
+		}
+
+		// Static filtering: if skill requires specific delegation model and adapter doesn't match, skip silently.
+		if meta, exists := skillMetadata[id]; exists {
+			if meta.DelegationModel != model.DelegationAny && meta.DelegationModel != adapter.DelegationModel() {
+				continue
+			}
 		}
 
 		assetPath := "skills/" + string(id) + "/SKILL.md"
