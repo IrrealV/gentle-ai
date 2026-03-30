@@ -30,9 +30,10 @@ var linearRoutes = map[Screen]Route{
 	ScreenSync:                {Backward: ScreenWelcome},
 	ScreenUpgradeSync:         {Backward: ScreenWelcome},
 	ScreenModelConfig:         {Backward: ScreenWelcome},
-	ScreenUninstall:           {Backward: ScreenWelcome},
+	ScreenUninstallMode:       {Backward: ScreenWelcome},
+	ScreenUninstall:           {Backward: ScreenUninstallMode},
 	ScreenUninstallComponents: {Backward: ScreenUninstall},
-	ScreenUninstallConfirm:    {Backward: ScreenUninstallComponents},
+	ScreenUninstallConfirm:    {Backward: ScreenUninstallMode},
 	ScreenUninstallResult:     {Backward: ScreenWelcome},
 }
 

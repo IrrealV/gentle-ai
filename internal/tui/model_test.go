@@ -803,9 +803,49 @@ func TestWelcomeMenu_OptionCount(t *testing.T) {
 	}
 }
 
+func TestUninstallModeScreen_PartialNavigatesToAgentSelection(t *testing.T) {
+	m := NewModel(system.DetectionResult{}, "dev")
+	m.Screen = ScreenUninstallMode
+	m.Cursor = 0 // Partial Uninstall option
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	state := updated.(Model)
+
+	if state.Screen != ScreenUninstall {
+		t.Fatalf("screen = %v, want %v", state.Screen, ScreenUninstall)
+	}
+	if state.UninstallMode != model.UninstallModePartial {
+		t.Fatalf("UninstallMode = %v, want %v", state.UninstallMode, model.UninstallModePartial)
+	}
+}
+
+func TestUninstallModeScreen_FullNavigatesToConfirm(t *testing.T) {
+	m := NewModel(system.DetectionResult{}, "dev")
+	m.Screen = ScreenUninstallMode
+	m.Cursor = 1 // Full Uninstall option
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	state := updated.(Model)
+
+	if state.Screen != ScreenUninstallConfirm {
+		t.Fatalf("screen = %v, want %v", state.Screen, ScreenUninstallConfirm)
+	}
+	if state.UninstallMode != model.UninstallModeFull {
+		t.Fatalf("UninstallMode = %v, want %v", state.UninstallMode, model.UninstallModeFull)
+	}
+	// Verify all agents and components were populated
+	if len(state.UninstallAgents) == 0 {
+		t.Fatal("UninstallAgents should be populated for Full mode")
+	}
+	if len(state.UninstallComponents) == 0 {
+		t.Fatal("UninstallComponents should be populated for Full mode")
+	}
+}
+
 func TestUninstallScreen_ContinueNavigatesToComponents(t *testing.T) {
 	m := NewModel(system.DetectionResult{}, "dev")
 	m.Screen = ScreenUninstall
+	m.UninstallMode = model.UninstallModePartial
 	m.UninstallAgents = []model.AgentID{model.AgentOpenCode}
 	m.Cursor = len(screens.UninstallAgentOptions())
 
@@ -820,6 +860,7 @@ func TestUninstallScreen_ContinueNavigatesToComponents(t *testing.T) {
 func TestUninstallComponents_ContinueNavigatesToConfirm(t *testing.T) {
 	m := NewModel(system.DetectionResult{}, "dev")
 	m.Screen = ScreenUninstallComponents
+	m.UninstallMode = model.UninstallModePartial
 	m.UninstallComponents = []model.ComponentID{model.ComponentSDD}
 	m.Cursor = len(screens.UninstallComponentOptions())
 
@@ -834,6 +875,7 @@ func TestUninstallComponents_ContinueNavigatesToConfirm(t *testing.T) {
 func TestUninstallConfirm_EnterExecutesAndNavigatesToResult(t *testing.T) {
 	m := NewModel(system.DetectionResult{}, "dev")
 	m.Screen = ScreenUninstallConfirm
+	m.UninstallMode = model.UninstallModePartial
 	m.UninstallAgents = []model.AgentID{model.AgentOpenCode}
 	m.UninstallComponents = []model.ComponentID{model.ComponentSDD, model.ComponentPersona}
 	m.Cursor = 0

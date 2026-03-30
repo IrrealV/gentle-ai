@@ -10,6 +10,65 @@ import (
 	"github.com/gentleman-programming/gentle-ai/internal/tui/styles"
 )
 
+type UninstallModeOption struct {
+	Mode        model.UninstallMode
+	Label       string
+	Description string
+}
+
+func UninstallModeOptions() []UninstallModeOption {
+	return []UninstallModeOption{
+		{
+			Mode:        model.UninstallModePartial,
+			Label:       "Partial Uninstall",
+			Description: "Select specific agents and components to remove",
+		},
+		{
+			Mode:        model.UninstallModeFull,
+			Label:       "Full Uninstall",
+			Description: "Remove all gentle-ai managed configuration from all agents",
+		},
+		{
+			Mode:        model.UninstallModeFullRemove,
+			Label:       "Full Uninstall & Remove Binary",
+			Description: "Remove all configuration AND delete the gentle-ai binary itself",
+		},
+	}
+}
+
+func RenderUninstallMode(cursor int) string {
+	var b strings.Builder
+
+	b.WriteString(styles.TitleStyle.Render("Uninstall Mode Selection"))
+	b.WriteString("\n\n")
+	b.WriteString(styles.SubtextStyle.Render("Choose how you want to uninstall gentle-ai:"))
+	b.WriteString("\n\n")
+
+	options := UninstallModeOptions()
+	for idx, opt := range options {
+		focused := idx == cursor
+		if focused {
+			b.WriteString(styles.SelectedStyle.Render("▸ " + opt.Label))
+		} else {
+			b.WriteString(styles.UnselectedStyle.Render("  " + opt.Label))
+		}
+		b.WriteString("\n")
+		b.WriteString(styles.SubtextStyle.Render("  " + opt.Description))
+		b.WriteString("\n")
+		if opt.Mode == model.UninstallModeFullRemove {
+			b.WriteString(styles.ErrorStyle.Render("  ⚠ WARNING: This cannot be undone without reinstalling"))
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+	}
+
+	b.WriteString(renderOptions([]string{"Continue", "Back"}, cursor-len(options)))
+	b.WriteString("\n")
+	b.WriteString(styles.HelpStyle.Render("j/k: navigate • enter: select • esc: back"))
+
+	return b.String()
+}
+
 func UninstallAgentOptions() []catalog.Agent {
 	return catalog.AllAgents()
 }
@@ -77,7 +136,7 @@ func RenderUninstallComponents(selected []model.ComponentID, cursor int) string 
 	return b.String()
 }
 
-func RenderUninstallConfirm(selected []model.AgentID, components []model.ComponentID, cursor int, operationRunning bool, spinnerFrame int) string {
+func RenderUninstallConfirm(mode model.UninstallMode, selected []model.AgentID, components []model.ComponentID, cursor int, operationRunning bool, spinnerFrame int) string {
 	var b strings.Builder
 
 	b.WriteString(styles.TitleStyle.Render("Confirm Uninstall"))
@@ -90,28 +149,72 @@ func RenderUninstallConfirm(selected []model.AgentID, components []model.Compone
 		return b.String()
 	}
 
-	if len(selected) == 0 {
-		b.WriteString(styles.WarningStyle.Render("No agents selected."))
+	// Render mode-specific information
+	switch mode {
+	case model.UninstallModePartial:
+		if len(selected) == 0 {
+			b.WriteString(styles.WarningStyle.Render("No agents selected."))
+			b.WriteString("\n\n")
+			b.WriteString(styles.HelpStyle.Render("enter: back • esc: back"))
+			return b.String()
+		}
+		b.WriteString(styles.SubtextStyle.Render("Mode: Partial Uninstall"))
 		b.WriteString("\n\n")
-		b.WriteString(styles.HelpStyle.Render("enter: back • esc: back"))
-		return b.String()
+		b.WriteString(styles.SubtextStyle.Render("Agents:"))
+		b.WriteString("\n")
+		for _, label := range uninstallAgentLabels(selected) {
+			b.WriteString(styles.UnselectedStyle.Render("  • " + label))
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+		b.WriteString(styles.SubtextStyle.Render("Components:"))
+		b.WriteString("\n")
+		for _, label := range uninstallComponentLabels(components) {
+			b.WriteString(styles.UnselectedStyle.Render("  • " + label))
+			b.WriteString("\n")
+		}
+	case model.UninstallModeFull:
+		b.WriteString(styles.SubtextStyle.Render("Mode: Full Uninstall"))
+		b.WriteString("\n\n")
+		b.WriteString(styles.UnselectedStyle.Render("This will remove all gentle-ai managed configuration from all supported agents."))
+		b.WriteString("\n")
+	case model.UninstallModeFullRemove:
+		b.WriteString(styles.ErrorStyle.Render("Mode: Full Uninstall & Remove Binary"))
+		b.WriteString("\n\n")
+		b.WriteString(styles.UnselectedStyle.Render("This will remove all gentle-ai managed configuration from all agents"))
+		b.WriteString("\n")
+		b.WriteString(styles.ErrorStyle.Render("AND delete the gentle-ai binary itself."))
+		b.WriteString("\n\n")
+		b.WriteString(styles.ErrorStyle.Render("⚠ WARNING: This action cannot be undone without reinstalling!"))
+		b.WriteString("\n")
 	}
 
-	b.WriteString(styles.SubtextStyle.Render("Agents:"))
 	b.WriteString("\n")
-	for _, label := range uninstallAgentLabels(selected) {
-		b.WriteString(styles.UnselectedStyle.Render("  • " + label))
-		b.WriteString("\n")
+
+	// Workspace-scoped assets warning
+	hasWorkspaceAssets := false
+	for _, comp := range components {
+		if comp == model.ComponentSDD || comp == model.ComponentSkills {
+			hasWorkspaceAssets = true
+			break
+		}
 	}
-	b.WriteString("\n")
-	b.WriteString(styles.SubtextStyle.Render("Components:"))
-	b.WriteString("\n")
-	for _, label := range uninstallComponentLabels(components) {
-		b.WriteString(styles.UnselectedStyle.Render("  • " + label))
+	if (mode == model.UninstallModeFull || mode == model.UninstallModeFullRemove) || hasWorkspaceAssets {
+		b.WriteString(styles.WarningStyle.Render("⚠ Workspace Assets Warning:"))
 		b.WriteString("\n")
+		b.WriteString(styles.SubtextStyle.Render("  Removing SDD or Skills will delete workspace-scoped files like:"))
+		b.WriteString("\n")
+		b.WriteString(styles.SubtextStyle.Render("  • .windsurf/workflows/ (SDD workflows)"))
+		b.WriteString("\n")
+		b.WriteString(styles.SubtextStyle.Render("  • .engram/ (persistent memory context)"))
+		b.WriteString("\n")
+		b.WriteString(styles.SubtextStyle.Render("  • Skills directories"))
+		b.WriteString("\n\n")
+		b.WriteString(styles.ErrorStyle.Render("  If you commit these deletions, ALL collaborators will lose this context!"))
+		b.WriteString("\n\n")
 	}
-	b.WriteString("\n")
-	b.WriteString(styles.WarningStyle.Render("This removes only gentle-ai managed content and creates a backup snapshot first."))
+
+	b.WriteString(styles.WarningStyle.Render("A backup snapshot will be created before any file is modified."))
 	b.WriteString("\n\n")
 	b.WriteString(renderOptions([]string{"Uninstall", "Cancel"}, cursor))
 	b.WriteString("\n")

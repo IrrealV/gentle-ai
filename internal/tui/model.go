@@ -151,6 +151,7 @@ const (
 	ScreenSync
 	ScreenUpgradeSync
 	ScreenModelConfig
+	ScreenUninstallMode
 	ScreenUninstall
 	ScreenUninstallComponents
 	ScreenUninstallConfirm
@@ -268,6 +269,9 @@ type Model struct {
 
 	// UpgradeErr holds the error from the last upgrade run (nil on success).
 	UpgradeErr error
+
+	// UninstallMode holds the selected uninstall mode (partial, full, full-remove).
+	UninstallMode model.UninstallMode
 
 	// UninstallAgents holds the current TUI selection for the uninstall flow.
 	UninstallAgents     []model.AgentID
@@ -475,12 +479,14 @@ func (m Model) View() string {
 		return screens.RenderModelConfig(m.Cursor)
 	case ScreenUpgradeSync:
 		return screens.RenderUpgradeSync(m.UpdateResults, m.UpgradeReport, m.SyncFilesChanged, m.UpgradeErr, m.SyncErr, m.OperationRunning, m.UpdateCheckDone, m.Cursor, m.SpinnerFrame)
+	case ScreenUninstallMode:
+		return screens.RenderUninstallMode(m.Cursor)
 	case ScreenUninstall:
 		return screens.RenderUninstall(m.UninstallAgents, m.Cursor)
 	case ScreenUninstallComponents:
 		return screens.RenderUninstallComponents(m.UninstallComponents, m.Cursor)
 	case ScreenUninstallConfirm:
-		return screens.RenderUninstallConfirm(m.UninstallAgents, m.UninstallComponents, m.Cursor, m.OperationRunning, m.SpinnerFrame)
+		return screens.RenderUninstallConfirm(m.UninstallMode, m.UninstallAgents, m.UninstallComponents, m.Cursor, m.OperationRunning, m.SpinnerFrame)
 	case ScreenUninstallResult:
 		return screens.RenderUninstallResult(m.UninstallResult, m.UninstallErr)
 	case ScreenDetection:
@@ -698,12 +704,40 @@ func (m Model) confirmSelection() (tea.Model, tea.Cmd) {
 			m.setScreen(ScreenModelConfig)
 		case 5:
 			m = m.withResetUninstallState()
-			m.setScreen(ScreenUninstall)
+			m.setScreen(ScreenUninstallMode)
 		case 6:
 			m.setScreen(ScreenBackups)
 		case 7:
 			return m, tea.Quit
 		}
+	case ScreenUninstallMode:
+		options := screens.UninstallModeOptions()
+		switch {
+		case m.Cursor < len(options):
+			m.UninstallMode = options[m.Cursor].Mode
+			switch m.UninstallMode {
+			case model.UninstallModePartial:
+				m.setScreen(ScreenUninstall)
+			case model.UninstallModeFull, model.UninstallModeFullRemove:
+				// Populate all agents and all components for full uninstall
+				allAgents := screens.UninstallAgentOptions()
+				m.UninstallAgents = make([]model.AgentID, 0, len(allAgents))
+				for _, agent := range allAgents {
+					m.UninstallAgents = append(m.UninstallAgents, agent.ID)
+				}
+				allComponents := screens.UninstallComponentOptions()
+				m.UninstallComponents = make([]model.ComponentID, 0, len(allComponents))
+				for _, component := range allComponents {
+					m.UninstallComponents = append(m.UninstallComponents, component.ID)
+				}
+				m.setScreen(ScreenUninstallConfirm)
+			}
+		case m.Cursor == len(options):
+			// Continue (no-op for now, could be used for custom logic)
+		case m.Cursor == len(options)+1:
+			m.setScreen(ScreenWelcome)
+		}
+		return m, nil
 	case ScreenUninstall:
 		agentCount := len(screens.UninstallAgentOptions())
 		switch {
@@ -1360,11 +1394,25 @@ func (m Model) startUninstall() tea.Cmd {
 	uninstallFn := m.UninstallFn
 	agentIDs := append([]model.AgentID(nil), m.UninstallAgents...)
 	componentIDs := append([]model.ComponentID(nil), m.UninstallComponents...)
+	mode := m.UninstallMode
 	return func() tea.Msg {
 		if uninstallFn == nil {
 			return UninstallDoneMsg{Err: fmt.Errorf("uninstall function not configured")}
 		}
 		result, err := uninstallFn(agentIDs, componentIDs)
+		if err != nil {
+			return UninstallDoneMsg{Result: result, Err: err}
+		}
+		// If FullRemove mode, attempt to delete the binary itself
+		if mode == model.UninstallModeFullRemove {
+			execPath, execErr := os.Executable()
+			if execErr != nil {
+				return UninstallDoneMsg{Result: result, Err: fmt.Errorf("uninstall succeeded but failed to locate binary: %w", execErr)}
+			}
+			if removeErr := os.Remove(execPath); removeErr != nil {
+				return UninstallDoneMsg{Result: result, Err: fmt.Errorf("uninstall succeeded but failed to remove binary at %q: %w", execPath, removeErr)}
+			}
+		}
 		return UninstallDoneMsg{Result: result, Err: err}
 	}
 }
@@ -1678,6 +1726,8 @@ func (m Model) optionCount() int {
 		return 1
 	case ScreenModelConfig:
 		return len(screens.ModelConfigOptions())
+	case ScreenUninstallMode:
+		return len(screens.UninstallModeOptions()) + 2
 	case ScreenUninstall:
 		return len(screens.UninstallAgentOptions()) + 2
 	case ScreenUninstallComponents:
