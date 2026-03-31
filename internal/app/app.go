@@ -122,6 +122,11 @@ func RunArgs(args []string, stdout io.Writer) error {
 	case "uninstall":
 		uninstallResult, err := cli.RunUninstall(args[1:], stdout)
 		if err != nil {
+			// If a backup was created before the failure, surface it so
+			// the user can restore safely.
+			if uninstallResult.Manifest.ID != "" {
+				_, _ = fmt.Fprintln(stdout, cli.RenderUninstallReport(uninstallResult))
+			}
 			return err
 		}
 		if uninstallResult.Manifest.ID != "" {
