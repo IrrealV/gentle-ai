@@ -1152,6 +1152,13 @@ func (m Model) confirmSelection() (tea.Model, tea.Cmd) {
 		m.setScreen(ScreenPersona)
 	case ScreenClaudeModelPicker:
 		if !m.ClaudeModelPicker.InCustomMode && m.Cursor == screens.ClaudeModelPickerOptionCount(m.ClaudeModelPicker)-1 {
+			// "Back" option: in ModelConfigMode return to the config menu,
+			// otherwise navigate to the previous install-flow screen.
+			if m.ModelConfigMode {
+				m.ModelConfigMode = false
+				m.setScreen(ScreenModelConfig)
+				return m, nil
+			}
 			if m.Selection.Preset == model.PresetCustom {
 				m.setScreen(ScreenDependencyTree)
 			} else {

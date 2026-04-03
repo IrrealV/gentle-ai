@@ -23,6 +23,7 @@ var foundationSkills = []model.SkillID{
 	model.SkillCreator,
 	model.SkillBranchPR,
 	model.SkillIssueCreation,
+	model.SkillSkillRegistry,
 }
 
 // SkillsForPreset returns which skills should be installed for a given preset.

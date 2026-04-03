@@ -55,6 +55,7 @@ const (
 	SkillJudgmentDay   SkillID = "judgment-day"
 	SkillBranchPR      SkillID = "branch-pr"
 	SkillIssueCreation SkillID = "issue-creation"
+	SkillSkillRegistry SkillID = "skill-registry"
 )
 
 type PersonaID string
