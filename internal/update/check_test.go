@@ -49,6 +49,17 @@ func TestDetectInstalledVersion(t *testing.T) {
 			wantVersion: "0.3.2",
 		},
 		{
+			name: "engram dev output is preserved as dev sentinel",
+			tool: ToolInfo{Name: "engram", DetectCmd: []string{"engram", "version"}},
+			lookPathFn: func(string) (string, error) {
+				return "/usr/local/bin/engram", nil
+			},
+			execCommandFn: func(name string, args ...string) *exec.Cmd {
+				return exec.Command("echo", "engram dev")
+			},
+			wantVersion: "dev",
+		},
+		{
 			name: "gga not installed",
 			tool: ToolInfo{Name: "gga", DetectCmd: []string{"gga", "--version"}},
 			lookPathFn: func(string) (string, error) {
@@ -197,6 +208,12 @@ func TestCheckFilteredWindowsShimKeepsGGAVisible(t *testing.T) {
 	}
 	if results[0].Status == NotInstalled {
 		t.Fatal("CheckFiltered() unexpectedly reported GGA as NotInstalled on Windows shim path")
+	}
+}
+
+func TestParseVersionFromOutput_DevSentinel(t *testing.T) {
+	if got := parseVersionFromOutput("engram dev"); got != "dev" {
+		t.Fatalf("parseVersionFromOutput(engram dev) = %q, want %q", got, "dev")
 	}
 }
 

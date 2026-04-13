@@ -58,6 +58,10 @@ Resolve mode:
 └── Cache the resolved mode for the report header
 ```
 
+#### Orchestrator-Injected TDD Mode
+
+If the orchestrator's launch prompt contains "STRICT TDD MODE IS ACTIVE", treat this as authoritative — do NOT override it with a failed engram search. The orchestrator already verified TDD status. Proceed directly to Strict TDD verification in Step 5a.
+
 ### Step 3: Check Completeness
 
 Verify ALL tasks are done:

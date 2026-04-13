@@ -492,6 +492,7 @@ func (s componentSyncStep) Run() error {
 			opts := sdd.InjectOptions{
 				OpenCodeModelAssignments: s.selection.ModelAssignments,
 				ClaudeModelAssignments:   s.selection.ClaudeModelAssignments,
+				KiroModelAssignments:     s.selection.KiroModelAssignments,
 				WorkspaceDir:             s.workspaceDir,
 				StrictTDD:                s.selection.StrictTDD,
 				Profiles:                 profiles,
@@ -658,6 +659,29 @@ func RunSync(args []string) (SyncResult, error) {
 	agentIDs = unique(agentIDs)
 
 	selection := BuildSyncSelection(flags, agentIDs)
+
+	// Load persisted model assignments from state when not provided via flags.
+	// This is the key fix: without this, every CLI sync falls back to the
+	// "balanced" preset and silently overwrites the user's model choices.
+	if len(selection.ClaudeModelAssignments) == 0 || len(selection.ModelAssignments) == 0 {
+		s, readErr := state.Read(homeDir)
+		if readErr == nil {
+			if len(selection.ClaudeModelAssignments) == 0 && len(s.ClaudeModelAssignments) > 0 {
+				m := make(map[string]model.ClaudeModelAlias, len(s.ClaudeModelAssignments))
+				for k, v := range s.ClaudeModelAssignments {
+					m[k] = model.ClaudeModelAlias(v)
+				}
+				selection.ClaudeModelAssignments = m
+			}
+			if len(selection.ModelAssignments) == 0 && len(s.ModelAssignments) > 0 {
+				m := make(map[string]model.ModelAssignment, len(s.ModelAssignments))
+				for k, v := range s.ModelAssignments {
+					m[k] = model.ModelAssignment{ProviderID: v.ProviderID, ModelID: v.ModelID}
+				}
+				selection.ModelAssignments = m
+			}
+		}
+	}
 
 	if flags.DryRun {
 		// Build the plan for inspection, skip execution.

@@ -42,6 +42,18 @@ Before writing ANY code:
 3. Read existing code in affected files — understand current patterns
 4. Check the project's coding conventions from `config.yaml`
 
+#### Step 2b: Read Previous Apply-Progress (if exists)
+
+Before starting work, check for existing apply-progress:
+
+1. `mem_search(query: "sdd/{change-name}/apply-progress", project: "{project}")`
+2. If found: `mem_get_observation(id)` → read the full content
+3. Parse which tasks are already marked complete
+4. Skip those tasks — start from the first incomplete task
+5. When saving your apply-progress in Step 6, MERGE: include all previously completed tasks PLUS your newly completed tasks in a single combined artifact
+
+**CRITICAL**: If the orchestrator told you previous progress exists, you MUST read it. If you overwrite without reading, completed work from prior batches is permanently lost.
+
 ### Step 3: Read Testing Capabilities and Resolve Mode
 
 Read the cached testing capabilities to determine implementation mode:
@@ -64,6 +76,16 @@ Resolve mode:
 ```
 
 **Key principle**: If Strict TDD Mode is not active, ZERO TDD instructions are loaded. The `strict-tdd.md` module is never read, never processed, never consumes tokens.
+
+#### Hard Gate (Strict TDD Only)
+
+If Strict TDD Mode is active (either from orchestrator injection or self-discovery):
+- You MUST produce a **TDD Cycle Evidence** table in your apply-progress artifact
+- Each task row MUST have: RED (test written first) → GREEN (implementation passes) → REFACTOR columns
+- If you complete a task WITHOUT writing tests first, mark it as FAILED in the evidence table
+- The verify phase WILL reject your work if the TDD Evidence table is missing or incomplete
+
+**There is no silent fallback.** If you resolved Strict TDD as active, you follow it or you report failure. You do NOT quietly switch to Standard Mode.
 
 ### Step 4: Implement Tasks (Standard Workflow)
 
@@ -101,6 +123,13 @@ Follow **Section C** from `skills/_shared/sdd-phase-common.md`.
 - topic_key: `sdd/{change-name}/apply-progress`
 - type: `architecture`
 - Also update the tasks artifact with `[x]` marks via `mem_update` (engram) or file edit (openspec/hybrid).
+
+#### Merge Protocol
+
+When saving apply-progress:
+1. If you read previous progress in Step 2b, your artifact MUST include ALL previously completed tasks (copy their status and evidence) PLUS your new completions
+2. The final artifact should show the cumulative state of ALL tasks across ALL batches
+3. Format: keep the same structure but ensure no completed task is lost from prior batches
 
 ### Step 7: Return Summary
 

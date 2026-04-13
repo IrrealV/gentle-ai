@@ -22,10 +22,14 @@ STEP A — SEARCH (get IDs only):
   mem_search(query: "sdd/{change-name}/spec", project: "{project}") → save spec_id
   mem_search(query: "sdd/{change-name}/design", project: "{project}") → save design_id
   mem_search(query: "sdd/{change-name}/tasks", project: "{project}") → save tasks_id
+STEP A2 — CHECK PREVIOUS PROGRESS (before starting work):
+  mem_search(query: "sdd/{change-name}/apply-progress", project: "{project}") → if found, save progress_id
+  - Previous apply-progress (if exists): `mem_search(query: "sdd/{change-name}/apply-progress", project: "{project}")` → read and merge
 STEP B — RETRIEVE FULL CONTENT (mandatory):
   mem_get_observation(id: spec_id) → full spec
   mem_get_observation(id: design_id) → full design
   mem_get_observation(id: tasks_id) → full tasks (keep tasks_id for updates)
+  IF progress_id exists: mem_get_observation(id: progress_id) → read previous progress, skip completed tasks, MERGE when saving
 Update tasks as you complete them:
   mem_update(id: {tasks-observation-id}, content: "{updated tasks with [x] marks}")
 Save progress:
