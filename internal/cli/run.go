@@ -710,8 +710,10 @@ func ggaAvailable(profile system.PlatformProfile) bool {
 		}
 	}
 	if profile.OS == "windows" {
-		if _, err := osStat(filepath.Join(homeDir, "bin", "gga")); err == nil {
-			return true
+		for _, name := range []string{"gga.ps1", "gga.exe", "gga"} {
+			if _, err := osStat(filepath.Join(homeDir, "bin", name)); err == nil {
+				return true
+			}
 		}
 	}
 	return false

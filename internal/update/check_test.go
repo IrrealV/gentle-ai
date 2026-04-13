@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 
 	"github.com/gentleman-programming/gentle-ai/internal/system"
@@ -104,6 +106,97 @@ func TestDetectInstalledVersion(t *testing.T) {
 				t.Fatalf("detectInstalledVersion() = %q, want %q", got, tc.wantVersion)
 			}
 		})
+	}
+}
+
+func TestDetectInstalledVersionWindowsShim(t *testing.T) {
+	tmpHome := t.TempDir()
+	binDir := filepath.Join(tmpHome, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(binDir, "gga.ps1"), []byte("fake"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	origLookPath := lookPath
+	origExecCommand := execCommand
+	origRuntimeGOOS := runtimeGOOS
+	origHomeDir := osUserHomeDir
+	origStat := osStat
+	t.Cleanup(func() {
+		lookPath = origLookPath
+		execCommand = origExecCommand
+		runtimeGOOS = origRuntimeGOOS
+		osUserHomeDir = origHomeDir
+		osStat = origStat
+	})
+
+	lookPath = func(string) (string, error) { return "", os.ErrNotExist }
+	runtimeGOOS = "windows"
+	osUserHomeDir = func() (string, error) { return tmpHome, nil }
+	osStat = os.Stat
+
+	got := detectInstalledVersion(context.Background(), ToolInfo{Name: "gga", DetectCmd: []string{"gga", "--version"}}, "dev")
+	if got != "unknown" {
+		t.Fatalf("detectInstalledVersion() = %q, want unknown when windows shim exists", got)
+	}
+}
+
+// TestCheckFilteredWindowsShimKeepsGGAVisible verifies the integrated update
+// flow keeps GGA visible on Windows when the PowerShell shim exists.
+func TestCheckFilteredWindowsShimKeepsGGAVisible(t *testing.T) {
+	tmpHome := t.TempDir()
+	binDir := filepath.Join(tmpHome, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(binDir, "gga.ps1"), []byte("fake"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(githubRelease{TagName: "v2.0.0", HTMLURL: "https://github.com/Gentleman-Programming/gentleman-guardian-angel/releases/tag/v2.0.0"})
+	}))
+	defer server.Close()
+
+	origClient := httpClient
+	origLookPath := lookPath
+	origExecCommand := execCommand
+	origRuntimeGOOS := runtimeGOOS
+	origHomeDir := osUserHomeDir
+	origStat := osStat
+	t.Cleanup(func() {
+		httpClient = origClient
+		lookPath = origLookPath
+		execCommand = origExecCommand
+		runtimeGOOS = origRuntimeGOOS
+		osUserHomeDir = origHomeDir
+		osStat = origStat
+	})
+
+	httpClient = server.Client()
+	httpClient.Transport = &testTransport{server: server}
+	lookPath = func(string) (string, error) { return "", os.ErrNotExist }
+	execCommand = func(name string, args ...string) *exec.Cmd { return exec.Command("false") }
+	runtimeGOOS = "windows"
+	osUserHomeDir = func() (string, error) { return tmpHome, nil }
+	osStat = os.Stat
+
+	results := CheckFiltered(context.Background(), "1.0.0", system.PlatformProfile{OS: "windows", PackageManager: "winget", Supported: true}, []string{"gga"})
+	if len(results) != 1 {
+		t.Fatalf("CheckFiltered() len = %d, want 1", len(results))
+	}
+	if results[0].Tool.Name != "gga" {
+		t.Fatalf("CheckFiltered() tool = %q, want gga", results[0].Tool.Name)
+	}
+	if results[0].Status != VersionUnknown {
+		t.Fatalf("CheckFiltered() status = %q, want %q for Windows shim visibility", results[0].Status, VersionUnknown)
+	}
+	if results[0].Status == NotInstalled {
+		t.Fatal("CheckFiltered() unexpectedly reported GGA as NotInstalled on Windows shim path")
 	}
 }
 

@@ -2,15 +2,21 @@ package update
 
 import (
 	"context"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 )
 
 // Package-level vars for testability (swap in tests via t.Cleanup).
 var (
-	execCommand = exec.Command
-	lookPath    = exec.LookPath
+	execCommand   = exec.Command
+	lookPath      = exec.LookPath
+	osUserHomeDir = os.UserHomeDir
+	osStat        = os.Stat
+	runtimeGOOS   = runtime.GOOS
 )
 
 // versionRegexp extracts a semver-like version from command output.
@@ -31,6 +37,9 @@ func detectInstalledVersion(ctx context.Context, tool ToolInfo, currentBuildVers
 
 	binary := tool.DetectCmd[0]
 	if _, err := lookPath(binary); err != nil {
+		if binary == "gga" && ggaShimInstalledOnWindows() {
+			return "unknown"
+		}
 		return "" // binary not found
 	}
 
@@ -41,6 +50,25 @@ func detectInstalledVersion(ctx context.Context, tool ToolInfo, currentBuildVers
 	}
 
 	return parseVersionFromOutput(strings.TrimSpace(string(out)))
+}
+
+func ggaShimInstalledOnWindows() bool {
+	if runtimeGOOS != "windows" {
+		return false
+	}
+
+	homeDir, err := osUserHomeDir()
+	if err != nil {
+		return false
+	}
+
+	for _, name := range []string{"gga.ps1", "gga.exe", "gga"} {
+		if _, err := osStat(filepath.Join(homeDir, "bin", name)); err == nil {
+			return true
+		}
+	}
+
+	return false
 }
 
 // parseVersionFromOutput extracts the first semver-like pattern from raw output.

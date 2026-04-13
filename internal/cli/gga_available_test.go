@@ -54,6 +54,64 @@ func TestGGAAvailableDetectsViaLocalBin(t *testing.T) {
 	}
 }
 
+// TestGGAAvailableDetectsViaWindowsPS1 verifies that ggaAvailable returns true
+// when the Windows PowerShell shim exists in ~/bin/gga.ps1.
+func TestGGAAvailableDetectsViaWindowsPS1(t *testing.T) {
+	tmpHome := t.TempDir()
+	binDir := filepath.Join(tmpHome, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(binDir, "gga.ps1"), []byte("fake"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	origLookPath := cmdLookPath
+	origHomeDir := osUserHomeDir
+	origStat := osStat
+	cmdLookPath = func(file string) (string, error) { return "", os.ErrNotExist }
+	osUserHomeDir = func() (string, error) { return tmpHome, nil }
+	osStat = os.Stat
+	t.Cleanup(func() {
+		cmdLookPath = origLookPath
+		osUserHomeDir = origHomeDir
+		osStat = origStat
+	})
+
+	if !ggaAvailable(system.PlatformProfile{OS: "windows", PackageManager: "winget"}) {
+		t.Fatal("ggaAvailable() = false, want true when gga.ps1 exists on Windows")
+	}
+}
+
+// TestGGAAvailableDetectsViaWindowsExe verifies that ggaAvailable returns true
+// when a native Windows executable exists in ~/bin/gga.exe.
+func TestGGAAvailableDetectsViaWindowsExe(t *testing.T) {
+	tmpHome := t.TempDir()
+	binDir := filepath.Join(tmpHome, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(binDir, "gga.exe"), []byte("fake"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	origLookPath := cmdLookPath
+	origHomeDir := osUserHomeDir
+	origStat := osStat
+	cmdLookPath = func(file string) (string, error) { return "", os.ErrNotExist }
+	osUserHomeDir = func() (string, error) { return tmpHome, nil }
+	osStat = os.Stat
+	t.Cleanup(func() {
+		cmdLookPath = origLookPath
+		osUserHomeDir = origHomeDir
+		osStat = origStat
+	})
+
+	if !ggaAvailable(system.PlatformProfile{OS: "windows", PackageManager: "winget"}) {
+		t.Fatal("ggaAvailable() = false, want true when gga.exe exists on Windows")
+	}
+}
+
 // TestGGAAvailableDetectsViaHomebrewOptPrefix verifies that ggaAvailable returns
 // true when gga exists at /opt/homebrew/bin/gga (Apple Silicon Homebrew default).
 func TestGGAAvailableDetectsViaHomebrewOptPrefix(t *testing.T) {
