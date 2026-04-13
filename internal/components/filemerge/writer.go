@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 const maxAtomicFileSize = 16 << 20
@@ -79,8 +80,12 @@ func WriteFileAtomic(path string, content []byte, perm fs.FileMode) (WriteResult
 		return WriteResult{}, fmt.Errorf("open parent directory for %q: %w", path, err)
 	}
 	defer dirFD.Close()
-	if err := dirFD.Sync(); err != nil {
-		return WriteResult{}, fmt.Errorf("sync parent directory for %q: %w", path, err)
+	// Windows does not support fsync on directories (NTFS limitation) — skip it.
+	// On all other platforms, sync the directory to flush the new entry to disk.
+	if runtime.GOOS != "windows" {
+		if err := dirFD.Sync(); err != nil {
+			return WriteResult{}, fmt.Errorf("sync parent directory for %q: %w", path, err)
+		}
 	}
 
 	cleanup = false
