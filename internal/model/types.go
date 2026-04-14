@@ -27,6 +27,14 @@ const (
 	TierFull SupportTier = "full"
 )
 
+type DelegationModel string
+
+const (
+	DelegationSingleAgent DelegationModel = "single"
+	DelegationMultiAgent  DelegationModel = "multi"
+	DelegationAny         DelegationModel = "any"
+)
+
 type ComponentID string
 
 const (

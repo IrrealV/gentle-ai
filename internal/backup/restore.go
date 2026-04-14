@@ -57,6 +57,14 @@ func (s RestoreService) Restore(manifest Manifest) error {
 // It extracts the tar.gz archive into a temp directory, then restores each
 // entry by resolving the relative SnapshotPath inside that temp directory.
 func (s RestoreService) restoreCompressed(manifest Manifest) error {
+	ok, err := isRootDirUnderBackupRoot(manifest.RootDir)
+	if err != nil {
+		return fmt.Errorf("validate compressed backup root dir: %w", err)
+	}
+	if !ok {
+		return fmt.Errorf("compressed backup RootDir %q is outside the configured backup root", manifest.RootDir)
+	}
+
 	tempDir, err := os.MkdirTemp("", "gentle-ai-restore-*")
 	if err != nil {
 		return fmt.Errorf("create temp restore dir: %w", err)
@@ -76,9 +84,13 @@ func (s RestoreService) restoreCompressed(manifest Manifest) error {
 			if filepath.IsAbs(entry.SnapshotPath) {
 				return fmt.Errorf("manifest entry %q has absolute SnapshotPath %q, expected relative", entry.OriginalPath, entry.SnapshotPath)
 			}
+			resolvedSnapshotPath := filepath.Clean(filepath.Join(tempDir, filepath.FromSlash(entry.SnapshotPath)))
+			if !isStrictDescendant(resolvedSnapshotPath, tempDir) {
+				return fmt.Errorf("manifest entry %q has invalid SnapshotPath %q: escapes extraction directory", entry.OriginalPath, entry.SnapshotPath)
+			}
 			resolvedEntry := ManifestEntry{
 				OriginalPath: entry.OriginalPath,
-				SnapshotPath: filepath.Join(tempDir, filepath.FromSlash(entry.SnapshotPath)),
+				SnapshotPath: resolvedSnapshotPath,
 				Existed:      true,
 				Mode:         entry.Mode,
 			}

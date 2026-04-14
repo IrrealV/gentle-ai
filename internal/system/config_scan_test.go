@@ -6,6 +6,43 @@ import (
 	"testing"
 )
 
+func TestKnownAgentConfigDirs_MatchesSupportedAgentSetOrder(t *testing.T) {
+	home := t.TempDir()
+	configs := knownAgentConfigDirs(home)
+
+	expected := []struct {
+		agent  string
+		suffix string
+	}{
+		{agent: "claude-code", suffix: filepath.Join(".claude")},
+		{agent: "opencode", suffix: filepath.Join(".config", "opencode")},
+		{agent: "kilocode", suffix: filepath.Join(".config", "kilo")},
+		{agent: "gemini-cli", suffix: filepath.Join(".gemini")},
+		{agent: "codex", suffix: filepath.Join(".codex")},
+		{agent: "cursor", suffix: filepath.Join(".cursor")},
+		{agent: "vscode-copilot", suffix: filepath.Join(".copilot")},
+		{agent: "antigravity", suffix: filepath.Join(".gemini", "antigravity")},
+		{agent: "windsurf", suffix: filepath.Join(".codeium", "windsurf")},
+		{agent: "qwen-code", suffix: filepath.Join(".qwen")},
+		{agent: "kiro-ide", suffix: filepath.Join(".kiro")},
+	}
+
+	if len(configs) != len(expected) {
+		t.Fatalf("knownAgentConfigDirs() len=%d, want %d", len(configs), len(expected))
+	}
+
+	for i, want := range expected {
+		got := configs[i]
+		if got.Agent != want.agent {
+			t.Fatalf("knownAgentConfigDirs()[%d].Agent=%q, want %q", i, got.Agent, want.agent)
+		}
+
+		if got.Path != filepath.Join(home, want.suffix) {
+			t.Fatalf("knownAgentConfigDirs()[%d].Path=%q, want %q", i, got.Path, filepath.Join(home, want.suffix))
+		}
+	}
+}
+
 // TestScanConfigs_ReturnsAllKnownAgentsWithExistsFlag verifies the canonical
 // ScanConfigs contract: ALL known registry agents are returned, with Exists=true
 // for those whose config dir is present on disk and Exists=false for those absent.
@@ -72,10 +109,15 @@ func TestScanConfigs_AgentFieldMatchesModelAgentID(t *testing.T) {
 	knownAgents := map[string]bool{
 		"claude-code":    false,
 		"opencode":       false,
+		"kilocode":       false,
 		"gemini-cli":     false,
+		"codex":          false,
 		"cursor":         false,
 		"vscode-copilot": false,
-		"codex":          false,
+		"antigravity":    false,
+		"windsurf":       false,
+		"qwen-code":      false,
+		"kiro-ide":       false,
 	}
 
 	for _, c := range configs {

@@ -147,6 +147,17 @@ func backupRoot() (string, error) {
 // Exported so tests in other packages (e.g. internal/update/upgrade) can override it.
 var BackupRootFn = backupRoot
 
+func isStrictDescendant(path string, base string) bool {
+	rel, err := filepath.Rel(filepath.Clean(base), filepath.Clean(path))
+	if err != nil {
+		return false
+	}
+	if rel == "." {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
 // isRootDirUnderBackupRoot validates that dir is a direct or indirect subdirectory
 // of the expected backup root (~/.gentle-ai/backups/). This prevents a tampered
 // manifest with root_dir set to "/" or another sensitive path from deleting arbitrary files.
@@ -160,34 +171,41 @@ func isRootDirUnderBackupRoot(dir string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	clean := filepath.Clean(dir)
-	rootClean := filepath.Clean(root)
-	if !strings.HasPrefix(clean, rootClean+string(filepath.Separator)) {
-		return false, nil
+
+	cleanDir := filepath.Clean(dir)
+	cleanRoot := filepath.Clean(root)
+
+	resolvedRoot, err := filepath.EvalSymlinks(cleanRoot)
+	if err != nil {
+		resolvedRoot = cleanRoot
 	}
-	// If the path exists, resolve symlinks and re-check to prevent symlink escapes.
-	if resolved, err := filepath.EvalSymlinks(clean); err == nil {
-		resolvedRoot, err := filepath.EvalSymlinks(rootClean)
-		if err != nil {
-			resolvedRoot = rootClean
-		}
-		return strings.HasPrefix(resolved, resolvedRoot+string(filepath.Separator)), nil
+
+	if resolvedDir, err := filepath.EvalSymlinks(cleanDir); err == nil {
+		return isStrictDescendant(resolvedDir, resolvedRoot), nil
 	}
-	// Path does not exist yet — accept Clean-only check.
-	return true, nil
+
+	// Path does not exist yet — fall back to lexical strict-descendant check.
+	return isStrictDescendant(cleanDir, cleanRoot), nil
 }
 
-// DeleteBackup removes the entire backup directory.
-func DeleteBackup(manifest Manifest) error {
-	if manifest.RootDir == "" {
+func validateManifestRootDir(rootDir string) error {
+	if rootDir == "" {
 		return fmt.Errorf("backup has no root directory")
 	}
-	ok, err := isRootDirUnderBackupRoot(manifest.RootDir)
+	ok, err := isRootDirUnderBackupRoot(rootDir)
 	if err != nil {
 		return fmt.Errorf("validate backup root dir: %w", err)
 	}
 	if !ok {
-		return fmt.Errorf("backup RootDir %q is outside the expected backup directory — refusing to delete", manifest.RootDir)
+		return fmt.Errorf("backup RootDir %q is outside the expected backup directory — refusing to operate", rootDir)
+	}
+	return nil
+}
+
+// DeleteBackup removes the entire backup directory.
+func DeleteBackup(manifest Manifest) error {
+	if err := validateManifestRootDir(manifest.RootDir); err != nil {
+		return err
 	}
 	return os.RemoveAll(manifest.RootDir)
 }
@@ -195,8 +213,8 @@ func DeleteBackup(manifest Manifest) error {
 // RenameBackup updates the backup's Description field in the manifest file.
 // This does not rename the directory — it updates the human-readable description.
 func RenameBackup(manifest Manifest, newDescription string) error {
-	if manifest.RootDir == "" {
-		return fmt.Errorf("backup has no root directory")
+	if err := validateManifestRootDir(manifest.RootDir); err != nil {
+		return err
 	}
 	manifest.Description = newDescription
 	manifestPath := filepath.Join(manifest.RootDir, ManifestFilename)

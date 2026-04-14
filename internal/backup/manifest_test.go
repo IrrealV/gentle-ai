@@ -476,6 +476,10 @@ func TestDeleteBackup_EmptyRootDir(t *testing.T) {
 // and returns no error.
 func TestRenameBackup_Success(t *testing.T) {
 	dir := t.TempDir()
+	origBackupRootFn := BackupRootFn
+	t.Cleanup(func() { BackupRootFn = origBackupRootFn })
+	BackupRootFn = func() (string, error) { return dir, nil }
+
 	backupDir := filepath.Join(dir, "backup-02")
 	if err := os.MkdirAll(backupDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
@@ -501,6 +505,10 @@ func TestRenameBackup_Success(t *testing.T) {
 // persists the new description into the manifest file on disk.
 func TestRenameBackup_UpdatesManifestFile(t *testing.T) {
 	dir := t.TempDir()
+	origBackupRootFn := BackupRootFn
+	t.Cleanup(func() { BackupRootFn = origBackupRootFn })
+	BackupRootFn = func() (string, error) { return dir, nil }
+
 	backupDir := filepath.Join(dir, "backup-03")
 	if err := os.MkdirAll(backupDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
@@ -528,6 +536,51 @@ func TestRenameBackup_UpdatesManifestFile(t *testing.T) {
 	}
 	if updated.Description != "after rename" {
 		t.Errorf("Description = %q, want %q", updated.Description, "after rename")
+	}
+}
+
+func TestRenameBackup_RejectsRootOutsideBackupRoot(t *testing.T) {
+	backupRoot := t.TempDir()
+	outsideRoot := t.TempDir()
+
+	origBackupRootFn := BackupRootFn
+	t.Cleanup(func() { BackupRootFn = origBackupRootFn })
+	BackupRootFn = func() (string, error) { return backupRoot, nil }
+
+	m := Manifest{
+		ID:      "backup-outside-root",
+		RootDir: outsideRoot,
+		Entries: []ManifestEntry{},
+	}
+
+	err := RenameBackup(m, "new description")
+	if err == nil {
+		t.Fatal("RenameBackup() should reject RootDir outside configured backup root")
+	}
+	if !strings.Contains(err.Error(), "outside the expected backup directory") {
+		t.Fatalf("RenameBackup() error = %v, want backup root validation error", err)
+	}
+}
+
+func TestRenameBackup_RejectsBackupRootItself(t *testing.T) {
+	backupRoot := t.TempDir()
+
+	origBackupRootFn := BackupRootFn
+	t.Cleanup(func() { BackupRootFn = origBackupRootFn })
+	BackupRootFn = func() (string, error) { return backupRoot, nil }
+
+	m := Manifest{
+		ID:      "backup-root-equality",
+		RootDir: backupRoot,
+		Entries: []ManifestEntry{},
+	}
+
+	err := RenameBackup(m, "new description")
+	if err == nil {
+		t.Fatal("RenameBackup() should reject using backup root as RootDir")
+	}
+	if !strings.Contains(err.Error(), "outside the expected backup directory") {
+		t.Fatalf("RenameBackup() error = %v, want strict descendant validation error", err)
 	}
 }
 

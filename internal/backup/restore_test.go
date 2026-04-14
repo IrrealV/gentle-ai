@@ -3,6 +3,7 @@ package backup
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -96,8 +97,13 @@ func TestRestoreCompressedBackup(t *testing.T) {
 	home := t.TempDir()
 	// Override fns so validation accepts paths under t.TempDir().
 	origUserHomeDirFn := UserHomeDirFn
-	t.Cleanup(func() { UserHomeDirFn = origUserHomeDirFn })
+	origBackupRootFn := BackupRootFn
+	t.Cleanup(func() {
+		UserHomeDirFn = origUserHomeDirFn
+		BackupRootFn = origBackupRootFn
+	})
 	UserHomeDirFn = func() (string, error) { return home, nil }
+	BackupRootFn = func() (string, error) { return home, nil }
 
 	backupDir := filepath.Join(home, "backup")
 
@@ -198,8 +204,13 @@ func TestRestoreCompressedMultipleFiles(t *testing.T) {
 	home := t.TempDir()
 	// Override UserHomeDirFn so validation accepts paths under t.TempDir().
 	origUserHomeDirFn := UserHomeDirFn
-	t.Cleanup(func() { UserHomeDirFn = origUserHomeDirFn })
+	origBackupRootFn := BackupRootFn
+	t.Cleanup(func() {
+		UserHomeDirFn = origUserHomeDirFn
+		BackupRootFn = origBackupRootFn
+	})
 	UserHomeDirFn = func() (string, error) { return home, nil }
+	BackupRootFn = func() (string, error) { return home, nil }
 
 	backupDir := filepath.Join(home, "backup")
 
@@ -287,8 +298,13 @@ func TestRestoreCompressedRemovesCreatedFiles(t *testing.T) {
 	home := t.TempDir()
 	// Override UserHomeDirFn so validation accepts paths under t.TempDir().
 	origUserHomeDirFn := UserHomeDirFn
-	t.Cleanup(func() { UserHomeDirFn = origUserHomeDirFn })
+	origBackupRootFn := BackupRootFn
+	t.Cleanup(func() {
+		UserHomeDirFn = origUserHomeDirFn
+		BackupRootFn = origBackupRootFn
+	})
 	UserHomeDirFn = func() (string, error) { return home, nil }
+	BackupRootFn = func() (string, error) { return home, nil }
 
 	backupDir := filepath.Join(home, "backup")
 
@@ -325,5 +341,124 @@ func TestRestoreCompressedRemovesCreatedFiles(t *testing.T) {
 
 	if _, statErr := os.Stat(createdFile); !os.IsNotExist(statErr) {
 		t.Fatalf("expected %q to be removed after restore, got stat err = %v", createdFile, statErr)
+	}
+}
+
+func TestRestoreCompressedRejectsSnapshotPathEscapingExtractionDir(t *testing.T) {
+	home := t.TempDir()
+	backupRoot := filepath.Join(home, "backups")
+	backupDir := filepath.Join(backupRoot, "backup-01")
+
+	origUserHomeDirFn := UserHomeDirFn
+	origBackupRootFn := BackupRootFn
+	t.Cleanup(func() {
+		UserHomeDirFn = origUserHomeDirFn
+		BackupRootFn = origBackupRootFn
+	})
+	UserHomeDirFn = func() (string, error) { return home, nil }
+	BackupRootFn = func() (string, error) { return backupRoot, nil }
+
+	if err := os.MkdirAll(backupDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() backup dir error = %v", err)
+	}
+
+	archiveSource := filepath.Join(home, "archive-source.txt")
+	if err := os.WriteFile(archiveSource, []byte("archive\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() archive source error = %v", err)
+	}
+	if err := CreateArchive(filepath.Join(backupDir, ArchiveFilename), []ArchiveEntry{{
+		RelPath:    "files/safe.txt",
+		SourcePath: archiveSource,
+		Mode:       0o644,
+	}}); err != nil {
+		t.Fatalf("CreateArchive() error = %v", err)
+	}
+
+	outsideName := "gentle-ai-restore-escape.txt"
+	outsidePath := filepath.Join(os.TempDir(), outsideName)
+	if err := os.WriteFile(outsidePath, []byte("outside\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() outside path error = %v", err)
+	}
+	t.Cleanup(func() { _ = os.Remove(outsidePath) })
+
+	originalPath := filepath.Join(home, "config", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(originalPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll() original path dir error = %v", err)
+	}
+
+	manifest := Manifest{
+		RootDir:    backupDir,
+		Compressed: true,
+		Entries: []ManifestEntry{{
+			OriginalPath: originalPath,
+			SnapshotPath: "../" + outsideName,
+			Existed:      true,
+			Mode:         0o644,
+		}},
+	}
+
+	service := RestoreService{}
+	err := service.Restore(manifest)
+	if err == nil {
+		t.Fatal("Restore() should reject SnapshotPath escaping extraction directory")
+	}
+	if !strings.Contains(err.Error(), "SnapshotPath") {
+		t.Fatalf("Restore() error = %v, want SnapshotPath validation error", err)
+	}
+}
+
+func TestRestoreCompressedRejectsArchiveOutsideBackupRoot(t *testing.T) {
+	home := t.TempDir()
+	backupRoot := filepath.Join(home, "expected-backups")
+	manifestRoot := filepath.Join(home, "outside-backups", "backup-01")
+
+	origUserHomeDirFn := UserHomeDirFn
+	origBackupRootFn := BackupRootFn
+	t.Cleanup(func() {
+		UserHomeDirFn = origUserHomeDirFn
+		BackupRootFn = origBackupRootFn
+	})
+	UserHomeDirFn = func() (string, error) { return home, nil }
+	BackupRootFn = func() (string, error) { return backupRoot, nil }
+
+	if err := os.MkdirAll(manifestRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll() manifest root error = %v", err)
+	}
+
+	archiveSource := filepath.Join(home, "archive-source-outside.txt")
+	if err := os.WriteFile(archiveSource, []byte("archive\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() archive source error = %v", err)
+	}
+	if err := CreateArchive(filepath.Join(manifestRoot, ArchiveFilename), []ArchiveEntry{{
+		RelPath:    "files/config/settings.json",
+		SourcePath: archiveSource,
+		Mode:       0o644,
+	}}); err != nil {
+		t.Fatalf("CreateArchive() error = %v", err)
+	}
+
+	originalPath := filepath.Join(home, "config", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(originalPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll() original path dir error = %v", err)
+	}
+
+	manifest := Manifest{
+		RootDir:    manifestRoot,
+		Compressed: true,
+		Entries: []ManifestEntry{{
+			OriginalPath: originalPath,
+			SnapshotPath: "files/config/settings.json",
+			Existed:      true,
+			Mode:         0o644,
+		}},
+	}
+
+	service := RestoreService{}
+	err := service.Restore(manifest)
+	if err == nil {
+		t.Fatal("Restore() should reject archive path outside configured backup root")
+	}
+	if !strings.Contains(err.Error(), "backup root") {
+		t.Fatalf("Restore() error = %v, want backup root validation error", err)
 	}
 }
